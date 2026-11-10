@@ -13,6 +13,7 @@ import {
   type OnApplicationShutdown,
 } from '@nestjs/common'
 import { ConfigService } from '@nestjs/config'
+import { tmpdir } from 'node:os'
 import type {
   RenderRequest,
   RenderResponse,
@@ -214,8 +215,9 @@ export class OrchestratorService implements OnApplicationShutdown {
         `Render failed: ${msg}`,
         err instanceof Error ? err.stack : undefined,
       )
+      // A server path (the temp folder, the cache) stays in the log, never in the answer
       const errors: CompileError[] = [
-        { severity: 'error', message: `Render threw: ${msg}` },
+        { severity: 'error', message: `Render threw: ${msg.split(tmpdir()).join('<tmp>')}` },
       ]
       return { ok: false, errors, durationMs }
     } finally {

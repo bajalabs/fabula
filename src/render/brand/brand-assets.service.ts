@@ -9,10 +9,12 @@
      • The sha256 of the bytes must equal the declared one, else the render fails with a compile-style error that
        names the asset (kind, role or variant) and the host, never the path or the query string, which may carry a
        signature.
-     • Content-addressed cache under os.tmpdir()/fabula-assets/<sha256>.<ext>, re-hashed on every hit, written
-       atomically, so a second render of the same brand does not refetch.
-     • Linked (or copied) into <workDir>/_shared/fonts/ and <workDir>/_shared/logos/, which the engine's rm -rf
-       removes with the rest of the work directory; the cache stays.
+     • Content-addressed cache under os.tmpdir()/fabula-assets/<sha256>.<ext>, written atomically, so a second
+       render of the same brand does not refetch.
+     • Linked (or copied) into <workDir>/_shared/fonts/ and <workDir>/_shared/logos/ first, then read and hashed
+       there: once the link exists, an eviction by another render cannot take the file away, and a cache entry that
+       was evicted in between, or that does not verify, is fetched again. The work directory goes with the engine's
+       rm -rf; the cache stays. An unexpected file-system error is answered without its path.
 
    Logos land under stable names (<variant>-<mode>.<ext>) so a template can also point at them by hand; fonts under
    their hash, since engines find a font by its family, not its file name.
@@ -190,6 +192,7 @@ export class BrandAssetsService {
 
   private readonly inflight = new Map<string, Promise<string>>()
   private readonly hosts: readonly string[]
+  private readonly log = new Logger('BrandAssets')
 
   constructor(config: ConfigService<Env, true>) {
     this.hosts = config.get('FABULA_ASSET_HOSTS', { infer: true })
@@ -228,25 +231,13 @@ export class BrandAssetsService {
     const jobs: Array<Promise<PlacedFont | PlacedLogo>> = [
       ...fonts.map(async (font): Promise<PlacedFont> => {
         const path = `${BRAND_FONT_DIR}/${font.sha256}.${font.format}`
-        const cached = await this.fetchToCache({
-          url: font.url,
-          sha256: font.sha256,
-          ext: font.format,
-          label: fontLabel(font),
-        })
-        await this.linkInto(cached, join(workDir, path))
+        await this.placeVerified({ url: font.url, sha256: font.sha256, ext: font.format, label: fontLabel(font) }, join(workDir, path))
         return { font, path }
       }),
       ...logos.map(async (logo): Promise<PlacedLogo> => {
         const path = `${BRAND_LOGO_DIR}/${logo.variant}-${logo.mode}.${logo.format}`
-        const cached = await this.fetchToCache({
-          url: logo.url,
-          sha256: logo.sha256,
-          ext: logo.format,
-          label: logoLabel(logo),
-        })
-        await this.linkInto(cached, join(workDir, path))
-        checkLogo(await readFile(join(workDir, path)), logo.format, logoLabel(logo))
+        const label = logoLabel(logo)
+        checkLogo(await this.placeVerified({ url: logo.url, sha256: logo.sha256, ext: logo.format, label }, join(workDir, path)), logo.format, label)
         return { logo, path }
       }),
     ]
@@ -256,11 +247,8 @@ export class BrandAssetsService {
     const assets: BrandAssets = { fonts: [], logos: [], fontDir: null }
     for (const s of settled) {
       if (s.status === 'rejected') {
-        if (s.reason instanceof BrandAssetError) {
-          errors.push({ severity: 'error', message: s.reason.message, file: 'brand' })
-          continue
-        }
-        throw s.reason
+        errors.push({ severity: 'error', message: this.assetError(s.reason).message, file: 'brand' })
+        continue
       }
       if ('font' in s.value) assets.fonts.push(s.value)
       else assets.logos.push(s.value)
@@ -280,13 +268,14 @@ export class BrandAssetsService {
     const settled = await Promise.allSettled(
       images.map(async (image): Promise<string> => {
         const label = `image (${image.where})`
-        const cached = await this.fetchToCache({ url: image.url, sha256: image.sha256, ext: 'img', label })
-        const bytes = await readFile(cached)
+        // Placed under a neutral name first; the extension its bytes prove comes after
+        const held = join(workDir, DOCUMENT_IMAGE_DIR, `${image.sha256}.${randomUUID()}.img`)
+        const bytes = await this.placeVerified({ url: image.url, sha256: image.sha256, ext: 'img', label }, held)
         const ext = imageExtension(bytes)
         if (!ext) throw new BrandAssetError(`${label}: the file is not a PNG, JPEG or WebP`)
         checkPixels(bytes, ext, label)
         const path = `${DOCUMENT_IMAGE_DIR}/${image.sha256}.${ext}`
-        await this.linkInto(cached, join(workDir, path))
+        await rename(held, join(workDir, path))
         return `/${path}`
       }),
     )
@@ -294,14 +283,38 @@ export class BrandAssetsService {
     const paths: string[] = []
     for (const s of settled) {
       if (s.status === 'fulfilled') paths.push(s.value)
-      else if (s.reason instanceof BrandAssetError) errors.push({ severity: 'error', message: s.reason.message, file: 'fields' })
-      else throw s.reason
+      else errors.push({ severity: 'error', message: this.assetError(s.reason).message, file: 'fields' })
     }
     return errors.length ? { ok: false, errors } : { ok: true, paths }
   }
 
-  /** Path of the verified file in the cache, fetching it when absent.
-   *  Concurrent renders asking for the same file share one fetch. */
+  /**
+   * The verified file at `dest`, and its bytes. The link (or copy) is made before the file is trusted, and the bytes
+   * are read from `dest`: a cache entry another render evicted in between, or one that does not verify, is fetched
+   * again, once.
+   */
+  private async placeVerified(spec: AssetSpec, dest: string): Promise<Buffer> {
+    for (let attempt = 0; attempt < 2; attempt++) {
+      const cached = await this.fetchToCache(spec)
+      if (!(await this.linkInto(cached, dest))) continue
+      const bytes = await readFile(dest)
+      if (sha256(bytes) === spec.sha256) return bytes
+      await rm(dest, { force: true })
+      await rm(cached, { force: true })
+    }
+    throw new BrandAssetError(`${spec.label}: the file could not be placed; try again`)
+  }
+
+  /** A failure as the render answers it: a BrandAssetError as it is, anything else without its message (a
+   *  file-system error carries a server path), logged here in full. */
+  private assetError(err: unknown): BrandAssetError {
+    if (err instanceof BrandAssetError) return err
+    this.log.error(`asset placement failed: ${err instanceof Error ? err.message : String(err)}`)
+    return new BrandAssetError('a brand file or picture could not be placed; try again')
+  }
+
+  /** Path of the file in the cache, fetching and verifying it when absent. Concurrent renders asking for the same
+   *  file share one fetch. The bytes are verified where they are placed (placeVerified). */
   async fetchToCache(spec: AssetSpec): Promise<string> {
     const key = `${spec.sha256}.${spec.ext}`
     const pending = this.inflight.get(key)
@@ -313,13 +326,9 @@ export class BrandAssetsService {
 
   private async resolve(spec: AssetSpec): Promise<string> {
     const target = join(this.cacheDir, `${spec.sha256}.${spec.ext}`)
-    const hit = await readFile(target).catch(() => null)
-    if (hit && sha256(hit) === spec.sha256) {
-      const now = new Date()
-      await utimes(target, now, now).catch(() => {}) // used just now: eviction goes by this time
-      return target
-    }
-    if (hit) await rm(target, { force: true })
+    const now = new Date()
+    // Used just now: eviction goes by this time. A file that is gone is fetched below.
+    if (await utimes(target, now, now).then(() => true, () => false)) return target
 
     const bytes = await this.download(spec)
     const actual = sha256(bytes)
@@ -415,15 +424,23 @@ export class BrandAssetsService {
     return Buffer.concat(chunks)
   }
 
-  /** Hard link from the cache (same filesystem under os.tmpdir()),
-   *  a copy when linking is refused; a repeat of the same file is fine. */
-  private async linkInto(cached: string, dest: string): Promise<void> {
+  /** A hard link from the cache (the same file system under os.tmpdir()), a copy when linking is refused; false
+   *  when the cache entry is gone. A file already at `dest` stays: placeVerified hashes what is there. */
+  private async linkInto(cached: string, dest: string): Promise<boolean> {
     try {
       await link(cached, dest)
+      return true
     } catch (err) {
       const code = (err as NodeJS.ErrnoException).code
-      if (code === 'EEXIST') return
+      if (code === 'EEXIST') return true
+      if (code === 'ENOENT') return false
+    }
+    try {
       await copyFile(cached, dest)
+      return true
+    } catch (err) {
+      if ((err as NodeJS.ErrnoException).code === 'ENOENT') return false
+      throw err
     }
   }
 }
