@@ -1,0 +1,44 @@
+# Fabula with Docker Compose. The keys come from your shell or from a .env file beside this one (see .env.example):
+#
+#   export FABULA_KEY=$(openssl rand -hex 32)
+#   export FABULA_HMAC_KEYS="{\"me\":\"$FABULA_KEY\"}"
+#   docker compose up --build -d
+#
+# An empty variable counts as unset, so each line below falls back to Fabula's own default.
+services:
+  fabula:
+    build: .
+    image: fabula:local
+    ports:
+      - "${FABULA_PORT:-3100}:3100"
+    environment:
+      FABULA_AUTH: ${FABULA_AUTH:-}
+      FABULA_HMAC_KEYS: ${FABULA_HMAC_KEYS:-}
+      FABULA_TOKENS: ${FABULA_TOKENS:-}
+      FABULA_ASSET_HOSTS: ${FABULA_ASSET_HOSTS:-}
+      FABULA_CALLBACK_KEY: ${FABULA_CALLBACK_KEY:-}
+      FABULA_CALLBACK_HOSTS: ${FABULA_CALLBACK_HOSTS:-}
+      FABULA_ENGINES: ${FABULA_ENGINES:-}
+      FABULA_ALLOW_INLINE_SOURCE: ${FABULA_ALLOW_INLINE_SOURCE:-}
+      FABULA_MAX_CONCURRENT_RENDERS: ${FABULA_MAX_CONCURRENT_RENDERS:-}
+      FABULA_RENDER_TIMEOUT_SECONDS: ${FABULA_RENDER_TIMEOUT_SECONDS:-}
+      FABULA_BODY_LIMIT_BYTES: ${FABULA_BODY_LIMIT_BYTES:-}
+      LOG_LEVEL: ${LOG_LEVEL:-}
+    # The service writes only under /tmp (the asset cache, one folder per render) and the user's home (font and
+    # Quarto caches); everything else is read-only, no capability is kept, and nothing can gain privileges.
+    read_only: true
+    tmpfs:
+      - /tmp:size=2g,mode=1777
+      - /home/node:size=256m,uid=1000,gid=1000
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    pids_limit: 1024
+    mem_limit: 4g
+    restart: unless-stopped
+    # With no brand files to fetch and no callbacks to make, Fabula needs no way out at all: put it on a network with
+    # no gateway and reach it only through a reverse proxy on the same network, for example
+    #   networks: [renderers]
+    # with, at the top level,
+    #   networks: { renderers: { internal: true } }
