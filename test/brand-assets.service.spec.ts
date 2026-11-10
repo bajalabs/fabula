@@ -476,3 +476,58 @@ describe('BrandAssetsService.placeImages', () => {
     expect(!r.ok && r.errors).toHaveLength(2)
   })
 })
+
+/* Logos, before: a logo's bytes were never looked at, so a PNG logo of 60000 × 60000 (a 1-bit file under 1 MB) went
+   to the engine unmeasured, and an "SVG" could be anything. Now a logo's bytes must be the format it claims, and a
+   PNG logo is held to the same pixel bound as a picture. */
+describe('BrandAssetsService, a logo’s bytes', () => {
+  let renders = 0
+  let svc: BrandAssetsService
+  let scratch: string
+  const originalFetch = globalThis.fetch
+  const pngHeader = (width: number, height: number) => {
+    const b = Buffer.alloc(33)
+    Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0, 0, 0, 13]).copy(b, 0)
+    b.write('IHDR', 12, 'latin1')
+    b.writeUInt32BE(width, 16)
+    b.writeUInt32BE(height, 20)
+    b[24] = 1 // one bit a pixel
+    return b
+  }
+  const placeLogo = async (format: 'png' | 'svg' | 'pdf', bytes: Buffer) => {
+    globalThis.fetch = vi.fn(async () => new Response(bytes, { status: 200 })) as unknown as typeof globalThis.fetch
+    const logo = { variant: 'primary', mode: 'light', format, url: `https://files.example.com/logo.${format}`, sha256: sha(bytes) }
+    return svc.place(brandWith({ logos: [logo] }), join(scratch, `work-${++renders}`), TYPST_ASSET_FORMATS)
+  }
+
+  beforeEach(async () => {
+    scratch = await mkdtemp(join(tmpdir(), 'fabula-logo-spec-'))
+    svc = new BrandAssetsService(config(['files.example.com']))
+    svc.cacheDir = join(scratch, 'cache')
+  })
+
+  afterEach(async () => {
+    globalThis.fetch = originalFetch
+    await rm(scratch, { recursive: true, force: true })
+  })
+
+  it('measures a PNG logo against the pixel bound', async () => {
+    const r = await placeLogo('png', pngHeader(60_000, 60_000))
+    expect(r.ok).toBe(false)
+    expect(!r.ok && r.errors[0]).toMatchObject({ file: 'brand' })
+    expect(!r.ok && r.errors[0].message).toContain('brand logo (variant primary, mode light, png): 60000×60000 is more than 40 million pixels')
+    expect((await placeLogo('png', pngHeader(600, 200))).ok).toBe(true)
+  })
+
+  it('refuses a logo whose bytes are not its format', async () => {
+    expect(await placeLogo('png', Buffer.from('<svg/>'))).toMatchObject({ ok: false, errors: [{ message: expect.stringContaining('not a PNG') }] })
+    expect(await placeLogo('pdf', Buffer.from('<svg/>'))).toMatchObject({ ok: false, errors: [{ message: expect.stringContaining('not a PDF') }] })
+    expect(await placeLogo('svg', pngHeader(2, 2))).toMatchObject({ ok: false, errors: [{ message: expect.stringContaining('not an SVG') }] })
+    expect((await placeLogo('pdf', Buffer.from('%PDF-1.7\n%%EOF'))).ok).toBe(true)
+  })
+
+  it('refuses an SVG logo with a DOCTYPE or an entity', async () => {
+    const bomb = Buffer.from('<?xml version="1.0"?><!DOCTYPE svg [<!ENTITY a "aaaaaaaaaa">]><svg xmlns="http://www.w3.org/2000/svg"><text>&a;</text></svg>')
+    expect(await placeLogo('svg', bomb)).toMatchObject({ ok: false, errors: [{ message: expect.stringContaining('DOCTYPE or an entity') }] })
+  })
+})

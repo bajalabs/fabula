@@ -19,7 +19,8 @@
 
    A document's pictures (cards in one-pager@1 and checklist@1) come the same way and under the same rules, into
    _shared/images/, named by hash with the extension their bytes prove: PNG, JPEG or WebP, nothing else, and at most
-   40 million pixels by their header.
+   40 million pixels by their header. A logo's bytes must be the format it claims: a PNG is measured against the same
+   bound, an SVG is XML text with no DOCTYPE or entity (no expansion bomb), a PDF starts with %PDF-.
 
    The cache holds at most 512 MB: past that, the files used longest ago go first. */
 
@@ -30,7 +31,7 @@ import { copyFile, link, mkdir, readdir, readFile, rename, rm, stat, utimes, wri
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import type { Env } from '../../config/env.js'
-import { imageExtension, imageSize } from '../../util/image-file.js'
+import { imageExtension, imageSize, type ImageExtension } from '../../util/image-file.js'
 import type {
   BrandFont,
   BrandFontFormat,
@@ -245,6 +246,7 @@ export class BrandAssetsService {
           label: logoLabel(logo),
         })
         await this.linkInto(cached, join(workDir, path))
+        checkLogo(await readFile(join(workDir, path)), logo.format, logoLabel(logo))
         return { logo, path }
       }),
     ]
@@ -282,11 +284,7 @@ export class BrandAssetsService {
         const bytes = await readFile(cached)
         const ext = imageExtension(bytes)
         if (!ext) throw new BrandAssetError(`${label}: the file is not a PNG, JPEG or WebP`)
-        const size = imageSize(bytes, ext)
-        if (!size || size.width < 1 || size.height < 1) throw new BrandAssetError(`${label}: the file's size cannot be read`)
-        if (size.width * size.height > DOCUMENT_IMAGE_MAX_PIXELS) {
-          throw new BrandAssetError(`${label}: ${size.width}×${size.height} is more than ${DOCUMENT_IMAGE_MAX_PIXELS / 1_000_000} million pixels`)
-        }
+        checkPixels(bytes, ext, label)
         const path = `${DOCUMENT_IMAGE_DIR}/${image.sha256}.${ext}`
         await this.linkInto(cached, join(workDir, path))
         return `/${path}`
@@ -427,6 +425,29 @@ export class BrandAssetsService {
       if (code === 'EEXIST') return
       await copyFile(cached, dest)
     }
+  }
+}
+
+/** A raster's size, by its header, against the pixel bound. */
+function checkPixels(bytes: Buffer, ext: ImageExtension, label: string): void {
+  const size = imageSize(bytes, ext)
+  if (!size || size.width < 1 || size.height < 1) throw new BrandAssetError(`${label}: the file's size cannot be read`)
+  if (size.width * size.height > DOCUMENT_IMAGE_MAX_PIXELS) {
+    throw new BrandAssetError(`${label}: ${size.width}×${size.height} is more than ${DOCUMENT_IMAGE_MAX_PIXELS / 1_000_000} million pixels`)
+  }
+}
+
+/** A logo's bytes are the format it claims; a PNG is measured like a picture. */
+export function checkLogo(bytes: Buffer, format: BrandLogoFormat, label: string): void {
+  if (format === 'png') {
+    if (imageExtension(bytes) !== 'png') throw new BrandAssetError(`${label}: the file is not a PNG`)
+    checkPixels(bytes, 'png', label)
+  } else if (format === 'pdf') {
+    if (bytes.subarray(0, 5).toString('latin1') !== '%PDF-') throw new BrandAssetError(`${label}: the file is not a PDF`)
+  } else {
+    const text = bytes.toString('utf-8')
+    if (!/<svg[\s>]/i.test(text)) throw new BrandAssetError(`${label}: the file is not an SVG`)
+    if (/<!(?:DOCTYPE|ENTITY)/i.test(text)) throw new BrandAssetError(`${label}: an SVG with a DOCTYPE or an entity is refused`)
   }
 }
 
