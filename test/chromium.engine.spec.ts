@@ -10,6 +10,7 @@ import { existsSync } from 'node:fs'
 import { mkdir, mkdtemp, realpath, rm, symlink, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import { inflateSync } from 'node:zlib'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import { brandIdentitySchema } from '../src/contracts/index.js'
 import { BrandAssetsService } from '../src/render/brand/brand-assets.service.js'
@@ -23,6 +24,7 @@ import {
   renderPath,
   screenshotPixels,
   SCREENSHOT_MAX_PIXELS,
+  chromiumArgs,
 } from '../src/render/engines/chromium.engine.js'
 
 const BRAND = brandIdentitySchema.parse({})
@@ -177,6 +179,16 @@ describe('answerRequest', () => {
   })
 })
 
+describe('chromiumArgs', () => {
+  it('keeps the browser off the system keychain and password store, and sizes its window to the viewport', () => {
+    const args = chromiumArgs('/tmp/profile', { width: 640, height: 480 })
+    expect(args).toContain('--use-mock-keychain')
+    expect(args).toContain('--password-store=basic')
+    expect(args).toContain('--window-size=640,480')
+    expect(args).toContain('--user-data-dir=/tmp/profile')
+  })
+})
+
 function findBrowser(): string | null {
   if (process.env.FABULA_CHROMIUM_PATH) return process.env.FABULA_CHROMIUM_PATH
   const mac = '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome'
@@ -193,10 +205,38 @@ describe.skipIf(!browser)('with a real browser', () => {
   const real = () => {
     const e = engine()
     e.binary = browser!
-    e.timeoutMs = 30_000
+    e.timeoutMs = 90_000 // a cold start of the browser can take most of a minute
     return e
   }
   const pngSize = (b: Uint8Array) => ({ width: Buffer.from(b).readUInt32BE(16), height: Buffer.from(b).readUInt32BE(20) })
+  /** A colour PNG's pixels (8 bits, RGB or RGBA, not interlaced), decoded here: rgb at (x, y). */
+  const pixels = (b: Uint8Array) => {
+    const png = Buffer.from(b)
+    const { width, height } = pngSize(png)
+    const bpp = png[25] === 6 ? 4 : 3
+    const idat: Buffer[] = []
+    for (let i = 8; i < png.length; ) {
+      const len = png.readUInt32BE(i)
+      if (png.toString('latin1', i + 4, i + 8) === 'IDAT') idat.push(png.subarray(i + 8, i + 8 + len))
+      i += 12 + len
+    }
+    const raw = inflateSync(Buffer.concat(idat))
+    const stride = width * bpp
+    const out = Buffer.alloc(stride * height)
+    for (let y = 0; y < height; y++) {
+      const filter = raw[y * (stride + 1)]
+      for (let x = 0; x < stride; x++) {
+        const v = raw[y * (stride + 1) + 1 + x]
+        const a = x >= bpp ? out[y * stride + x - bpp] : 0
+        const up = y > 0 ? out[(y - 1) * stride + x] : 0
+        const c = x >= bpp && y > 0 ? out[(y - 1) * stride + x - bpp] : 0
+        const p = a + up - c
+        const pred = [0, a, up, (a + up) >> 1, Math.abs(p - a) <= Math.abs(p - up) && Math.abs(p - a) <= Math.abs(p - c) ? a : Math.abs(p - up) <= Math.abs(p - c) ? up : c][filter]
+        out[y * stride + x] = (v + pred) & 0xff
+      }
+    }
+    return (x: number, y: number) => [...out.subarray(y * stride + x * bpp, y * stride + x * bpp + 3)]
+  }
 
   it('writes a PNG of the viewport at its scale', async () => {
     const r = await real().render(request('<h1 style="color:#0E7C66">Hello</h1>', 'png', { viewport: { width: 400, height: 200, deviceScaleFactor: 2 } }))
@@ -205,7 +245,17 @@ describe.skipIf(!browser)('with a real browser', () => {
     expect(r.mime).toBe('image/png')
     expect(Buffer.from(r.bytes).subarray(0, 8)).toEqual(Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]))
     expect(pngSize(r.bytes)).toEqual({ width: 800, height: 400 })
-  }, 40_000)
+  }, 120_000)
+
+  it('captures the page once, at the viewport, not a tiling of a smaller window', async () => {
+    const page = '<body style="margin:0;background:#fff"><div style="width:100px;height:100px;background:#f00"></div></body>'
+    const r = await real().render(request(page, 'png', { viewport: { width: 1200, height: 630, deviceScaleFactor: 1 } }))
+    expect(r.ok, JSON.stringify(!r.ok && r.errors)).toBe(true)
+    if (!r.ok) return
+    const at = pixels(r.bytes)
+    expect(at(50, 50)).toEqual([255, 0, 0])
+    for (const [x, y] of [[806, 50], [50, 489], [1150, 600], [600, 315]]) expect(at(x, y), `${x},${y}`).toEqual([255, 255, 255])
+  }, 120_000)
 
   it('writes a JPEG and a PDF', async () => {
     const jpeg = await real().render(request('<p>Hello</p>', 'jpeg', { viewport: { width: 200, height: 100, deviceScaleFactor: 1 }, quality: 70 }))
@@ -213,7 +263,7 @@ describe.skipIf(!browser)('with a real browser', () => {
     const pdf = await real().render(request('<h1>Report</h1><p>Body</p>', 'pdf'))
     expect(pdf.ok && pdf.mime).toBe('application/pdf')
     expect(pdf.ok && Buffer.from(pdf.bytes).subarray(0, 5).toString('latin1')).toBe('%PDF-')
-  }, 60_000)
+  }, 120_000)
 
   it('refuses every resource from outside the render, and names its host in a warning', async () => {
     const page = [
@@ -229,12 +279,12 @@ describe.skipIf(!browser)('with a real browser', () => {
     expect(messages).toContain('a resource outside the render was not loaded: https://example.com')
     expect(messages.join(' ')).not.toContain('secret')
     expect(messages.join(' ')).not.toContain('/etc/')
-  }, 40_000)
+  }, 120_000)
 
   it('runs no script: a page that would rewrite itself keeps its own size', async () => {
     const source = '<div style="height:50px">x</div><script>document.body.innerHTML = "<div style=\\"height:3000px\\"></div>"</script>'
     const r = await real().render(request(source, 'png', { viewport: { width: 200, height: 100, deviceScaleFactor: 1 }, fullPage: true }))
     expect(r.ok, JSON.stringify(!r.ok && r.errors)).toBe(true)
     expect(r.ok && pngSize(r.bytes).height).toBeLessThan(3000)
-  }, 40_000)
+  }, 120_000)
 })

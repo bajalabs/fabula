@@ -142,9 +142,10 @@ function composeSource(userSource: string, brandCss: string, values: Record<stri
   return `<!doctype html>\n<html lang="en">\n<head>\n<meta charset="utf-8">\n${brandStyle}\n</head>\n<body>\n${filled}\n</body>\n</html>`
 }
 
-export function chromiumArgs(profileDir: string): string[] {
+export function chromiumArgs(profileDir: string, window: { width: number; height: number } = { width: 1200, height: 630 }): string[] {
   return [
     '--headless=new',
+    `--window-size=${window.width},${window.height}`,
     '--remote-debugging-pipe',
     '--no-sandbox',
     '--disable-gpu',
@@ -158,6 +159,9 @@ export function chromiumArgs(profileDir: string): string[] {
     '--metrics-recording-only',
     '--mute-audio',
     '--hide-scrollbars',
+    // No system keychain or password store: a throwaway profile needs neither, and on a desktop they would prompt
+    '--use-mock-keychain',
+    '--password-store=basic',
     `--user-data-dir=${profileDir}`,
     '--proxy-server=127.0.0.1:9',
     '--proxy-bypass-list=<-loopback>',
@@ -225,7 +229,7 @@ export class ChromiumEngine implements RenderEngine {
   private async capture(output: OutputType, cfg: ChromiumConfig, tagged: boolean, workDir: string, siteDir: string): Promise<EngineRenderResult> {
     const client = this.launch({
       binary: this.binary,
-      args: chromiumArgs(join(workDir, 'profile')),
+      args: chromiumArgs(join(workDir, 'profile'), cfg.viewport),
       env: engineEnv({ HOME: workDir }),
       timeoutMs: this.timeoutMs,
     })
@@ -262,7 +266,15 @@ export class ChromiumEngine implements RenderEngine {
         const { data } = await page<{ data: string }>('Page.printToPDF', { printBackground: true, preferCSSPageSize: true, generateTaggedPDF: tagged })
         return done(Buffer.from(data, 'base64'), 'application/pdf')
       }
-      const shot: CdpParams = { format: output, captureBeyondViewport: cfg.fullPage, ...(output === 'jpeg' ? { quality: cfg.quality } : {}) }
+      // Always beyond the viewport, with a clip: a capture limited to the window tiles the window's frame when the
+      // emulated viewport is larger than the headless window
+      const { width, height } = cfg.viewport
+      const shot: CdpParams = {
+        format: output,
+        captureBeyondViewport: true,
+        clip: { x: 0, y: 0, width, height, scale: 1 },
+        ...(output === 'jpeg' ? { quality: cfg.quality } : {}),
+      }
       if (cfg.fullPage) {
         const m = await page<{ cssContentSize?: { width: number; height: number }; contentSize: { width: number; height: number } }>('Page.getLayoutMetrics')
         const size = m.cssContentSize ?? m.contentSize
