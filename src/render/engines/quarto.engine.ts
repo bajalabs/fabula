@@ -31,7 +31,7 @@ import type {
 const DEFAULT_TIMEOUT_MS = 30_000
 const CODE_EXEC_TIMEOUT_MS = 60_000
 
-function composeSource(
+export function composeSource(
   userSource: string,
   fields: EngineRenderRequest['fields'],
   values: Record<string, unknown>,

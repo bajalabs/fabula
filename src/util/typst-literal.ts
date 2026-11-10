@@ -1,4 +1,8 @@
-/* A JSON value as a Typst literal, for the `#let <key> = <literal>` lines written before a template's source. */
+/* A JSON value as a Typst literal, for the `#let <key> = <literal>` lines written before a template's source.
+
+   Strings are escaped for Typst (quote, backslash, line breaks) and every `{` is written as `\u{7b}`: Pandoc and
+   Quarto read these lines inside a raw Typst block of a Markdown file, and Quarto expands a `{{< shortcode >}}`
+   even there (`include` reads a file). Typst reads `\u{7b}` back as `{`, so the value is unchanged. */
 
 export type FieldTypeHint =
   | 'string'
@@ -17,6 +21,7 @@ function escapeString(s: string): string {
     .replace(/\n/g, '\\n')
     .replace(/\r/g, '\\r')
     .replace(/\t/g, '\\t')
+    .replace(/\{/g, '\\u{7b}')
 }
 
 /** Convert any JSON-compatible value to its Typst literal representation. */
