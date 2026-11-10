@@ -1,0 +1,82 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  check:
+    name: Lint, type-check, test, build
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: pnpm/action-setup@73e46992e05b19abd31f2f3c20e0e7370d762115 # v6.1.1
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version-file: .node-version
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm lint
+      - run: pnpm type-check
+      - name: Typst and Poppler, for the specs that compile the templates
+        run: |
+          set -euo pipefail
+          version=$(sed -n 's/^ARG TYPST_VERSION=//p' Dockerfile)
+          digest=$(sed -n 's/^ARG TYPST_SHA256_X86_64=//p' Dockerfile)
+          curl -fsSL -o "$RUNNER_TEMP/typst.tar.xz" "https://github.com/typst/typst/releases/download/v${version}/typst-x86_64-unknown-linux-musl.tar.xz"
+          echo "$digest  $RUNNER_TEMP/typst.tar.xz" | sha256sum -c -
+          tar -xJf "$RUNNER_TEMP/typst.tar.xz" -C "$RUNNER_TEMP"
+          echo "$RUNNER_TEMP/typst-x86_64-unknown-linux-musl" >> "$GITHUB_PATH"
+          sudo apt-get update -q
+          sudo apt-get install -y -q --no-install-recommends poppler-utils
+      - run: pnpm test
+      - run: pnpm build
+
+  image:
+    name: Image, engine drill, smoke test
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Build the image (not pushed)
+        run: docker build --tag fabula:ci .
+      - name: Image size
+        run: docker image inspect fabula:ci --format 'image size {{.Size}} bytes' | tee -a "$GITHUB_STEP_SUMMARY"
+      - name: Engine drill (every engine's version, then one render each)
+        run: |
+          set -o pipefail
+          docker run --rm fabula:ci sh scripts/engine-drill.sh | tee -a "$GITHUB_STEP_SUMMARY"
+      - name: Start the service as compose.yaml runs it
+        run: |
+          key=$(openssl rand -hex 32)
+          echo "::add-mask::$key"
+          echo "FABULA_KEY=$key" >> "$GITHUB_ENV"
+          docker run -d --name fabula --read-only \
+            --tmpfs /tmp:size=2g,mode=1777 --tmpfs /home/node:size=256m,uid=1000,gid=1000 \
+            --cap-drop ALL --security-opt no-new-privileges:true \
+            -e FABULA_HMAC_KEYS="{\"ci\":\"$key\"}" -p 3100:3100 fabula:ci
+          for i in $(seq 1 60); do curl -fsS http://127.0.0.1:3100/readyz && exit 0; sleep 2; done
+          docker logs fabula 2>&1 | tail -60
+          exit 1
+      - name: Smoke test (every template's sample through the API, and two refusals)
+        run: |
+          set -o pipefail
+          docker exec -e FABULA_URL=http://127.0.0.1:3100 -e FABULA_CALLER=ci -e FABULA_KEY="$FABULA_KEY" fabula \
+            node scripts/fabula.mjs smoke | tee -a "$GITHUB_STEP_SUMMARY"
+      - name: The service's log, on failure
+        if: failure()
+        run: docker logs fabula 2>&1 | tail -100

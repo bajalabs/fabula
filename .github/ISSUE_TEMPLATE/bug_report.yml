@@ -1,0 +1,41 @@
+name: Bug report
+description: Something renders wrong, fails, or is refused when it should not be.
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        A security problem? Do not open an issue: report it privately (see SECURITY.md).
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened, and what you expected
+    validations:
+      required: true
+  - type: textarea
+    id: request
+    attributes:
+      label: The request
+      description: The template (name@version) or the format and source, the values, the output. Leave out keys, tokens and anything private.
+      render: json
+    validations:
+      required: true
+  - type: textarea
+    id: answer
+    attributes:
+      label: The answer
+      description: The HTTP status and the body's `errors` or `warnings`, or the relevant log lines.
+      render: text
+  - type: input
+    id: version
+    attributes:
+      label: Fabula version or commit
+    validations:
+      required: true
+  - type: dropdown
+    id: run
+    attributes:
+      label: How it runs
+      options: [The Docker image, compose.yaml, From source (pnpm start), Other]
+    validations:
+      required: true
