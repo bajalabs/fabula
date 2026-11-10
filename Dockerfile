@@ -28,7 +28,7 @@ RUN apk add --no-cache curl tar xz \
  && chmod +x /usr/local/bin/typst
 
 # ── The app's build (dev dependencies stay here) ─────────────────────
-FROM node:24.20.0-bookworm-slim AS build
+FROM node:26.13.0-bookworm-slim AS build
 RUN corepack enable && corepack prepare pnpm@10.26.0 --activate
 WORKDIR /app
 COPY package.json pnpm-lock.yaml pnpm-workspace.yaml tsconfig.json tsconfig.build.json ./
@@ -37,14 +37,14 @@ COPY src ./src
 RUN pnpm build
 
 # ── Production dependencies only ─────────────────────────────────────
-FROM node:24.20.0-bookworm-slim AS prod-deps
+FROM node:26.13.0-bookworm-slim AS prod-deps
 RUN corepack enable && corepack prepare pnpm@10.26.0 --activate
 WORKDIR /app
 COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
 RUN pnpm install --frozen-lockfile --prod --ignore-scripts
 
 # ── The runtime ──────────────────────────────────────────────────────
-FROM node:24.20.0-bookworm-slim AS runtime
+FROM node:26.13.0-bookworm-slim AS runtime
 
 # Fonts; Python for WeasyPrint's venv and the Office theme script; WeasyPrint's Debian libraries; Poppler's pdfinfo
 # and pdftoppm; Chromium.
