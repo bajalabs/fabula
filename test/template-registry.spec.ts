@@ -168,8 +168,8 @@ describe('loadTemplates', () => {
   })
 
   it('stops on a field with no schema, so no template can go unchecked', () => {
-    const fields = [{ key: 'rows', label: 'Rows', fieldTypeKey: 'array' }]
-    expect(() => loadTemplates(make({ 'doc/note/v1/template.json': manifest({ fields }), 'doc/note/v1/main.typ': '' }))).toThrow(/field rows \(array\) has no schema/)
+    const fields = [{ key: 'rows', label: 'Rows', fieldTypeKey: 'spreadsheet' }]
+    expect(() => loadTemplates(make({ 'doc/note/v1/template.json': manifest({ fields }), 'doc/note/v1/main.typ': '' }))).toThrow(/field rows \(spreadsheet\) has no schema/)
   })
 
   it('stops on a folder that does not match its manifest, a missing entry, bad JSON or a bad version folder', () => {

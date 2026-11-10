@@ -25,7 +25,7 @@ import {
 } from '../contracts/index.js'
 
 import { brandPrimaryLogoMode } from './brand/brand-identity.service.js'
-import { fieldSchema, parseTemplateValues } from './document-fields.js'
+import { fieldSchema, parseRequestValues, parseTemplateValues, type FieldIssue } from './document-fields.js'
 
 export interface LoadedTemplate {
   id: string
@@ -57,6 +57,8 @@ function logoWarnings(id: string, where: TemplateManifest['headLogo'], brand: Re
   if (found) return []
   return [{ severity: 'warning', file: 'brand', message: `${id}: the brand has no stacked or primary logo with mode ${mode}, so the head has no logo` }]
 }
+
+const invalid = (issues: FieldIssue[]) => new BadRequestException({ error: 'validation_failed', issues })
 
 const dirs = (p: string): string[] =>
   existsSync(p) ? readdirSync(p).filter((d) => !d.startsWith('.') && statSync(join(p, d)).isDirectory()).sort() : []
@@ -90,10 +92,11 @@ export function loadTemplates(root: string): Map<string, LoadedTemplate> {
         if (!existsSync(entry)) throw new Error(`${where}: entry ${manifest.entry} is missing`)
         const id = `${name}@${manifest.version}`
         for (const field of manifest.fields) {
-          if (!fieldSchema(id, field)) throw new Error(`${where}: field ${field.key} (${field.fieldTypeKey}) has no schema`)
+          if (!fieldSchema(field)) throw new Error(`${where}: field ${field.key} (${field.fieldTypeKey}) has no schema`)
         }
+        const source = readFileSync(entry, 'utf-8')
         if (out.has(id)) throw new Error(`${where}: ${id} is defined twice`)
-        out.set(id, { id, manifest, source: readFileSync(entry, 'utf-8') })
+        out.set(id, { id, manifest, source })
       }
     }
   }
@@ -124,14 +127,18 @@ export class TemplateRegistryService {
   /** A render input as an ordinary render request: a source as it came, a template by its manifest. */
   resolve(input: RenderInput): TemplateResolution {
     if (!input.template) {
-      return { ok: true, request: renderRequestSchema.parse(input), warnings: [] }
+      // A source of the caller's own: its declared fields by their types, any other value as plain text
+      const request = renderRequestSchema.parse(input)
+      const parsed = parseRequestValues(request.fields, request.values)
+      if (!parsed.ok) throw invalid(parsed.issues)
+      return { ok: true, request: { ...request, values: parsed.values }, warnings: [] }
     }
     const t = this.templates.get(input.template)
     if (!t) {
       return { ok: false, errors: [{ severity: 'error', message: `no template ${input.template}`, file: 'template' }] }
     }
-    const parsed = parseTemplateValues(t.id, t.manifest.fields, input.values ?? {})
-    if (!parsed.ok) throw new BadRequestException({ error: 'validation_failed', issues: parsed.issues })
+    const parsed = parseTemplateValues(t.manifest.fields, input.values ?? {})
+    if (!parsed.ok) throw invalid(parsed.issues)
     const { template: _drop, ...rest } = input
     const request = renderRequestSchema.parse({
       ...rest,

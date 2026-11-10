@@ -149,6 +149,8 @@ export const templateFieldSchema = z.object({
   fieldTypeKey: z.string(),
   isRequired: z.boolean().default(false),
   defaultValue: z.unknown().optional(),
+  // A string field's length limit, in characters, when the default for its key does not fit
+  maxLength: z.number().int().positive().max(1_000_000).optional(),
   description: z.string().optional(),
   options: z.unknown().optional(),
   sortOrder: z.number().int().default(0),

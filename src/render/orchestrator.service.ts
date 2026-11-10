@@ -25,6 +25,7 @@ import { QuartoEngine } from './engines/quarto.engine.js'
 import { WeasyPrintEngine } from './engines/weasyprint.engine.js'
 import { MjmlEngine } from './engines/mjml.engine.js'
 import { PagePreviewService } from './page-preview.service.js'
+import { issuesAsErrors, parseRequestValues } from './document-fields.js'
 import type { RenderEngine } from '../contracts/engine.js'
 
 @Injectable()
@@ -149,6 +150,11 @@ export class OrchestratorService implements OnApplicationShutdown {
       }
     }
 
+    // Every value by its field's type, whatever the engine and however the request came: a value that does not fit
+    // is refused before an engine sees it (the controller already answered 400 for a request it resolved)
+    const values = parseRequestValues(req.fields, req.values)
+    if (!values.ok) return { ok: false, errors: issuesAsErrors(values.issues), durationMs: Date.now() - startedAt }
+
     this.inFlight += 1
     this.renderCount += 1
     try {
@@ -156,7 +162,7 @@ export class OrchestratorService implements OnApplicationShutdown {
         source: req.source,
         brand: req.brand,
         fields: req.fields,
-        values: req.values,
+        values: values.values,
         output: req.output,
         engineConfig: req.engineConfig ?? {},
       })
