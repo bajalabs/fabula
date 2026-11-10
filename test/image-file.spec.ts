@@ -51,3 +51,63 @@ describe('JPEG', () => {
     expect(imageSize(jpeg(SOI, sof(5, 4), scan, EOI, sof(40_000, 40_000)), 'jpg')).toEqual({ width: 5, height: 4 })
   })
 })
+
+/* WebP, before: the size came from the first chunk alone, so an extended file answered with its VP8X canvas while
+   its bitstream, which the decoder allocates for, could declare 16384 × 16384. Now every chunk is walked, the larger
+   of canvas and bitstream is the size, and an animation or a second bitstream is refused. */
+
+const chunk = (id: string, body: number[]) => {
+  const head = Buffer.alloc(8)
+  head.write(id, 0, 'latin1')
+  head.writeUInt32LE(body.length, 4)
+  return Buffer.concat([head, Buffer.from(body), Buffer.alloc(body.length & 1)])
+}
+const riff = (...chunks: Buffer[]) => {
+  const payload = Buffer.concat([Buffer.from('WEBP', 'latin1'), ...chunks])
+  const head = Buffer.alloc(8)
+  head.write('RIFF', 0, 'latin1')
+  head.writeUInt32LE(payload.length, 4)
+  return Buffer.concat([head, payload])
+}
+const u24 = (n: number) => [n & 0xff, (n >> 8) & 0xff, (n >> 16) & 0xff]
+const vp8x = (w: number, h: number, flags = 0) => chunk('VP8X', [flags, 0, 0, 0, ...u24(w - 1), ...u24(h - 1)])
+const vp8l = (w: number, h: number) => {
+  const bits = ((w - 1) & 0x3fff) | (((h - 1) & 0x3fff) << 14)
+  return chunk('VP8L', [0x2f, bits & 0xff, (bits >>> 8) & 0xff, (bits >>> 16) & 0xff, (bits >>> 24) & 0xff, 0, 0])
+}
+const vp8 = (w: number, h: number) => chunk('VP8 ', [0x30, 0x01, 0x00, 0x9d, 0x01, 0x2a, w & 0xff, w >> 8, h & 0xff, h >> 8])
+
+describe('WebP', () => {
+  it('reads a simple lossy and a simple lossless file', () => {
+    expect(imageSize(riff(vp8(300, 200)), 'webp')).toEqual({ width: 300, height: 200 })
+    expect(imageSize(riff(vp8l(30, 20)), 'webp')).toEqual({ width: 30, height: 20 })
+  })
+
+  it('takes the bitstream’s size when it is larger than the VP8X canvas', () => {
+    expect(imageSize(riff(vp8x(1, 1), vp8l(16_384, 16_384)), 'webp')).toEqual({ width: 16_384, height: 16_384 })
+    expect(imageSize(riff(vp8x(1, 1, 0x10), chunk('ALPH', [0]), vp8(16_383, 16_383)), 'webp')).toEqual({ width: 16_383, height: 16_383 })
+  })
+
+  it('takes the canvas when it is the larger', () => {
+    expect(imageSize(riff(vp8x(20_000, 20_000), vp8l(1, 1)), 'webp')).toEqual({ width: 20_000, height: 20_000 })
+  })
+
+  it('refuses an animation, a second bitstream, no bitstream, and a chunk past the end', () => {
+    expect(imageSize(riff(vp8x(2, 2, 0x02), chunk('ANIM', [0, 0, 0, 0, 0, 0]), chunk('ANMF', Array(16).fill(0))), 'webp')).toBeNull()
+    expect(imageSize(riff(vp8x(2, 2), chunk('ANMF', Array(16).fill(0))), 'webp')).toBeNull()
+    expect(imageSize(riff(vp8l(1, 1), vp8l(16_384, 16_384)), 'webp')).toBeNull()
+    expect(imageSize(riff(vp8x(2, 2)), 'webp')).toBeNull()
+    const cut = riff(vp8l(2, 2)).subarray(0, 22)
+    expect(imageSize(Buffer.concat([cut, Buffer.alloc(0)]), 'webp')).toBeNull()
+  })
+})
+
+describe('PNG', () => {
+  it('reads the size only from an IHDR chunk in first place', () => {
+    const png = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0, 0, 0, 13, ...Buffer.from('IHDR'), 0, 0, 0, 7, 0, 0, 0, 5])
+    expect(imageSize(png, 'png')).toEqual({ width: 7, height: 5 })
+    const other = Buffer.from(png)
+    other.write('tEXt', 12, 'latin1')
+    expect(imageSize(other, 'png')).toBeNull()
+  })
+})

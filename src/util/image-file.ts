@@ -73,21 +73,54 @@ function jpegSize(b: Buffer): ImageSize | null {
   return size // no end-of-image marker: a truncated file, as a decoder reads it
 }
 
+/** A lossy bitstream's frame: a key frame's start code, then 14-bit width and height. */
+function vp8Size(b: Buffer, at: number, length: number): ImageSize | null {
+  if (length < 10 || (b[at] & 0x01) !== 0 || b[at + 3] !== 0x9d || b[at + 4] !== 0x01 || b[at + 5] !== 0x2a) return null
+  return { width: b.readUInt16LE(at + 6) & 0x3fff, height: b.readUInt16LE(at + 8) & 0x3fff }
+}
+
+/** A lossless bitstream's frame: the 0x2f signature, then width − 1 and height − 1 in 14 bits each. */
+function vp8lSize(b: Buffer, at: number, length: number): ImageSize | null {
+  if (length < 5 || b[at] !== 0x2f) return null
+  const bits = b.readUInt32LE(at + 1)
+  return { width: (bits & 0x3fff) + 1, height: ((bits >>> 14) & 0x3fff) + 1 }
+}
+
+/**
+ * A still WebP's size, from every chunk that declares one: the VP8X canvas and the VP8 or VP8L bitstream, the larger
+ * of each, since a decoder allocates for the bitstream it decodes whatever the canvas says. Refused (null): an
+ * animation, a file with no bitstream or two, a second canvas, a chunk that runs past the file.
+ */
 function webpSize(b: Buffer): ImageSize | null {
-  if (b.length < 30) return null
-  const chunk = b.toString('latin1', 12, 16)
-  if (chunk === 'VP8X') return { width: b.readUIntLE(24, 3) + 1, height: b.readUIntLE(27, 3) + 1 }
-  if (chunk === 'VP8L') {
-    const bits = b.readUInt32LE(21)
-    return { width: (bits & 0x3fff) + 1, height: ((bits >>> 14) & 0x3fff) + 1 }
+  if (b.length < 20) return null
+  const end = Math.min(b.length, 8 + b.readUInt32LE(4))
+  let canvas: ImageSize | null = null
+  let frame: ImageSize | null = null
+  let i = 12
+  while (i + 8 <= end) {
+    const id = b.toString('latin1', i, i + 4)
+    const length = b.readUInt32LE(i + 4)
+    const body = i + 8
+    if (body + length > end) return null
+    if (id === 'VP8X') {
+      if (canvas || length < 10 || (b[body] & 0x02) !== 0) return null // 0x02: an animation
+      canvas = { width: b.readUIntLE(body + 4, 3) + 1, height: b.readUIntLE(body + 7, 3) + 1 }
+    } else if (id === 'VP8 ' || id === 'VP8L') {
+      if (frame) return null
+      frame = id === 'VP8 ' ? vp8Size(b, body, length) : vp8lSize(b, body, length)
+      if (!frame) return null
+    } else if (id === 'ANIM' || id === 'ANMF') {
+      return null
+    }
+    i = body + length + (length & 1)
   }
-  if (chunk === 'VP8 ') return { width: b.readUInt16LE(26) & 0x3fff, height: b.readUInt16LE(28) & 0x3fff }
-  return null
+  if (!frame) return null
+  return canvas ? { width: Math.max(canvas.width, frame.width), height: Math.max(canvas.height, frame.height) } : frame
 }
 
 /** The size in pixels the header declares; null when it cannot be read. */
 export function imageSize(bytes: Uint8Array, kind: ImageExtension): ImageSize | null {
   const b = Buffer.from(bytes)
-  if (kind === 'png') return b.length < 24 ? null : { width: b.readUInt32BE(16), height: b.readUInt32BE(20) }
+  if (kind === 'png') return b.length < 24 || b.toString('latin1', 12, 16) !== 'IHDR' ? null : { width: b.readUInt32BE(16), height: b.readUInt32BE(20) }
   return kind === 'jpg' ? jpegSize(b) : webpSize(b)
 }
