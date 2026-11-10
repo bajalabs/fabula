@@ -6,15 +6,16 @@
    for its first caller.
 
    A request calls one as `<name>@<version>`; it becomes an ordinary render request: the template's format, source and
-   fields, its default output when the request names none, and its engineConfig under the request's own.
+   fields, its default output when the request names none, and its engineConfig under the request's own. A request
+   may carry its own source instead, unless FABULA_ALLOW_INLINE_SOURCE=false (403).
 
    Every field of a template has a schema (document-fields.ts): a template that declares one without is a boot error,
    and a value that does not fit is a 400 naming the field, before any engine runs. A template's PDF standards are a
    floor: a request can add to them, never take them away. */
 
-import { BadRequestException, Injectable, Logger } from '@nestjs/common'
+import { BadRequestException, ForbiddenException, Injectable, Logger } from '@nestjs/common'
 import { existsSync, readdirSync, readFileSync, statSync } from 'node:fs'
-import { join, resolve } from 'node:path'
+import { join } from 'node:path'
 import {
   renderRequestSchema,
   templateManifestSchema,
@@ -27,6 +28,7 @@ import {
 import { brandPrimaryLogoMode } from './brand/brand-identity.service.js'
 import { fieldSchema, parseRequestValues, parseTemplateValues, type FieldIssue } from './document-fields.js'
 import { tokenKeys } from '../util/mustache.js'
+import { settings } from '../config/settings.js'
 
 export interface LoadedTemplate {
   id: string
@@ -116,8 +118,7 @@ export class TemplateRegistryService {
   private readonly templates: Map<string, LoadedTemplate>
 
   constructor() {
-    const root = resolve(process.env.FABULA_TEMPLATES_DIR ?? join(process.cwd(), 'templates'))
-    this.templates = loadTemplates(root)
+    this.templates = loadTemplates(settings().templatesDir)
     this.log.log(`${this.templates.size} templates: ${[...this.templates.keys()].join(', ') || 'none'}`)
   }
 
@@ -134,6 +135,9 @@ export class TemplateRegistryService {
   /** A render input as an ordinary render request: a source as it came, a template by its manifest. */
   resolve(input: RenderInput): TemplateResolution {
     if (!input.template) {
+      if (!settings().allowInlineSource) {
+        throw new ForbiddenException({ error: 'inline_source_disabled', message: 'this instance renders named templates only (FABULA_ALLOW_INLINE_SOURCE=false)' })
+      }
       // A source of the caller's own: its declared fields by their types, any other value as plain text
       const request = renderRequestSchema.parse(input)
       const parsed = parseRequestValues(request.fields, request.values)

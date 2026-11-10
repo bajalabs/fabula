@@ -5,9 +5,12 @@
      POST /preview        the same render, never with a callback
      POST /data/parse     CSV, JSON, YAML or TOML to records
      POST /data/validate  values against a list of fields
-     GET  /templates      the templates this instance serves, with their fields and samples */
+     GET  /templates      the templates this instance serves, with their fields and samples
 
-import { Body, Controller, Get, Post, Res } from '@nestjs/common'
+   A render answers 200 with `ok: true`, or 422 with `ok: false` and its errors (a compile error, a refused file); a
+   body that does not fit the request schema, or a value that does not fit its field, is a 400. */
+
+import { Body, Controller, Get, HttpCode, Post, Res } from '@nestjs/common'
 import type { FastifyReply } from 'fastify'
 import {
   RENDER_ENDPOINTS,
@@ -54,16 +57,17 @@ export class RenderController {
   }
 
   @Post(RENDER_ENDPOINTS.render)
+  @HttpCode(200)
   async render(
     @Body(new ZodValidationPipe(renderInputSchema)) body: RenderInput,
     @Res({ passthrough: true }) reply: FastifyReply,
   ): Promise<RenderResponse | { accepted: true; jobId: string }> {
-    if (!body.callback) return this.renderInput(body)
+    if (!body.callback) return answered(reply, await this.renderInput(body))
     // A long render: refused now if it cannot call back, else accepted and run in the background
     const refusal = this.callbacks.refusal(body.callback.url)
-    if (refusal) return { ok: false, errors: [refusal] }
+    if (refusal) return answered(reply, { ok: false, errors: [refusal] })
     const resolved = this.templates.resolve(body)
-    if (!resolved.ok) return { ok: false, errors: resolved.errors }
+    if (!resolved.ok) return answered(reply, { ok: false, errors: resolved.errors })
     const jobId = this.callbacks.newJobId(body.callback.id)
     void this.callbacks.runAndDeliver(body.callback.url, jobId, () => this.renderResolved(resolved.request, resolved.warnings))
     reply.status(202)
@@ -71,10 +75,12 @@ export class RenderController {
   }
 
   @Post(RENDER_ENDPOINTS.preview)
+  @HttpCode(200)
   async preview(
     @Body(new ZodValidationPipe(renderInputSchema)) body: RenderInput,
+    @Res({ passthrough: true }) reply: FastifyReply,
   ): Promise<RenderResponse> {
-    return this.renderInput(body)
+    return answered(reply, await this.renderInput(body))
   }
 
   @Get(RENDER_ENDPOINTS.templates)
@@ -83,6 +89,7 @@ export class RenderController {
   }
 
   @Post(RENDER_ENDPOINTS.parseData)
+  @HttpCode(200)
   parseData(
     @Body(new ZodValidationPipe(parseDataRequestSchema)) body: ParseDataRequest,
   ): ParseDataResponse {
@@ -90,10 +97,17 @@ export class RenderController {
   }
 
   @Post(RENDER_ENDPOINTS.validateData)
+  @HttpCode(200)
   validateData(
     @Body(new ZodValidationPipe(validateDataRequestSchema))
     body: ValidateDataRequest,
   ): ValidateDataResponse {
     return this.validator.validate(body)
   }
+}
+
+/** A render that did not produce a document is a 422; its body says why. */
+function answered(reply: FastifyReply, result: RenderResponse): RenderResponse {
+  if (!result.ok) reply.status(422)
+  return result
 }

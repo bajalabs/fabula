@@ -1,6 +1,7 @@
 /* TypstEngine: `typst compile` in a fresh work directory: the field values as `#let` lines before the template's
    source, the brand as _shared/brand.typ, the brand's files and the document's pictures under _shared/. Typst reads
-   nothing outside the work directory (--root). */
+   nothing outside the work directory (--root), runs with engineEnv() (no service secret, no reachable network, so a
+   package missing from the cache fails instead of downloading) and is killed at FABULA_RENDER_TIMEOUT_SECONDS. */
 
 import { Injectable } from '@nestjs/common'
 import { spawn } from 'node:child_process'
@@ -15,6 +16,8 @@ import type {
 } from '../../contracts/index.js'
 import { readPdfOptions, typstPdfArgs } from '../../contracts/pdf-options.js'
 import { toTypstLiteral, type FieldTypeHint } from '../../util/typst-literal.js'
+import { settings } from '../../config/settings.js'
+import { engineEnv } from './subprocess.js'
 import { documentImages, parseDocumentValues } from '../document-fields.js'
 import { BrandIdentityService } from '../brand/brand-identity.service.js'
 import {
@@ -27,8 +30,6 @@ import type {
   RenderEngine,
 } from '../../contracts/engine.js'
 
-/** A compile that runs longer is killed: under the 60 s a caller gives a whole render, so it hears why. */
-export const TYPST_COMPILE_TIMEOUT_MS = 45_000
 
 export function composeSource(
   userSource: string,
@@ -95,7 +96,7 @@ export class TypstEngine implements RenderEngine {
   readonly format: RenderFormat = 'typst'
   readonly outputs: readonly OutputType[] = ['pdf']
   /** A spec shortens it. */
-  compileTimeoutMs = TYPST_COMPILE_TIMEOUT_MS
+  compileTimeoutMs = settings().renderTimeoutMs
 
   constructor(
     private readonly brandIdentity: BrandIdentityService,
@@ -154,7 +155,7 @@ export class TypstEngine implements RenderEngine {
       args.push(...typstPdfArgs(pdfOpts.pdf))
 
       return await new Promise<EngineRenderResult>((resolve) => {
-        const proc = spawn('typst', args)
+        const proc = spawn('typst', args, { env: engineEnv() })
         const timer = setTimeout(() => {
           proc.kill('SIGKILL')
           resolve({

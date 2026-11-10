@@ -3,7 +3,8 @@
      1. {{ key }} substitution, HTML-escaped.
      2. The brand's <mj-attributes> into <mj-head>, unless the template has its own (after the values, so a brand
         name is never read as a {{ key }}).
-     3. mjml2html(). */
+     3. mjml2html(), with includes off: an <mj-include> is not read, so a source cannot pull a server file into the
+        email. (MJML 5 defaults to this; it is set here so an upgrade cannot change it.) */
 
 import { Injectable } from '@nestjs/common'
 // mjml's default export is the compile function.
@@ -101,6 +102,7 @@ export class MjmlEngine implements RenderEngine {
       const out: MjmlResult = await mjml2html(composed, {
         validationLevel: 'soft',
         keepComments: false,
+        ignoreIncludes: true,
       })
 
       const fatal = out.errors.filter(

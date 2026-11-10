@@ -2,15 +2,18 @@
 
      1. {{ key }} substitution in the source, HTML-escaped.
      2. The brand stylesheet as a <style> block in <head>.
-     3. `weasyprint main.html main.pdf` in a fresh work directory, beside the brand's files.
+     3. scripts/weasyprint-render.py main.html main.pdf in a fresh work directory, beside the brand's files.
 
-   WeasyPrint runs no JavaScript. */
+   WeasyPrint runs no JavaScript. The script gives it a URL fetcher that reads data: URLs and files inside the work
+   directory only, so a page cannot fetch from the network or embed a server file (an image, a stylesheet, an
+   attachment); a refused resource is a warning. The process runs with engineEnv() and is killed at
+   FABULA_RENDER_TIMEOUT_SECONDS. */
 
 import { Injectable } from '@nestjs/common'
 import { spawn } from 'node:child_process'
 import { mkdir, readFile, writeFile, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
-import { join } from 'node:path'
+import { join, resolve as resolvePath } from 'node:path'
 import { randomUUID } from 'node:crypto'
 import type {
   CompileError,
@@ -24,13 +27,16 @@ import {
   PRINT_HTML_ASSET_FORMATS,
 } from '../brand/brand-assets.service.js'
 import { substitute, TemplateValueError } from '../../util/mustache.js'
+import { settings } from '../../config/settings.js'
+import { engineEnv } from './subprocess.js'
 import type {
   EngineRenderRequest,
   EngineRenderResult,
   RenderEngine,
 } from '../../contracts/engine.js'
 
-const DEFAULT_TIMEOUT_MS = 20_000
+/** The wrapper around WeasyPrint's Python API, from the app's root (/app in the image). */
+export const WEASYPRINT_SCRIPT = resolvePath(process.cwd(), 'scripts', 'weasyprint-render.py')
 
 function composeSource(
   userSource: string,
@@ -142,32 +148,18 @@ export class WeasyPrintEngine implements RenderEngine {
       }
       await writeFile(htmlPath, composed, 'utf-8')
 
-      const args = [
-        htmlPath,
-        pdfPath,
-        '--presentational-hints',
-        '--media-type',
-        'print',
-        ...pdfArgs.args,
-      ]
+      const args = [WEASYPRINT_SCRIPT, htmlPath, pdfPath, ...pdfArgs.args]
+      const timeoutMs = settings().renderTimeoutMs
 
       return await new Promise<EngineRenderResult>((resolve) => {
-        const proc = spawn('weasyprint', args, {
-          env: {
-            PATH: process.env.PATH ?? '/usr/local/bin:/usr/bin:/bin',
-            HOME: process.env.HOME ?? '/tmp',
-            LANG: 'C.UTF-8',
-            LC_ALL: 'C.UTF-8',
-          },
-          stdio: ['ignore', 'pipe', 'pipe'],
-        })
+        const proc = spawn('python3', args, { cwd: workDir, env: engineEnv(), stdio: ['ignore', 'pipe', 'pipe'] })
 
         const stderrChunks: Buffer[] = []
         let timedOut = false
         const killTimer = setTimeout(() => {
           timedOut = true
           proc.kill('SIGKILL')
-        }, DEFAULT_TIMEOUT_MS)
+        }, timeoutMs)
 
         proc.stderr.on('data', (c) => stderrChunks.push(c))
         proc.stdout.on('data', () => {
@@ -195,7 +187,7 @@ export class WeasyPrintEngine implements RenderEngine {
               errors: [
                 {
                   severity: 'error',
-                  message: `weasyprint timed out after ${DEFAULT_TIMEOUT_MS}ms`,
+                  message: `weasyprint stopped after ${timeoutMs / 1000} s`,
                 },
               ],
             })

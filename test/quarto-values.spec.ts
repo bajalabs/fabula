@@ -28,7 +28,7 @@ describe('toTypstLiteral', () => {
 
 describe('what Quarto reads', () => {
   it('has no {{ from a value, in a text field or inside a list', () => {
-    const src = quartoSource('Hello', [field('title'), field('rows', 'array')], { title: INCLUDE, rows: [{ cell: INCLUDE }] }, false)
+    const src = quartoSource('Hello', [field('title'), field('rows', 'array')], { title: INCLUDE, rows: [{ cell: INCLUDE }] })
     expect(src).not.toContain('{{')
     expect(src).toContain('#let title = "\\u{7b}\\u{7b}< include')
   })

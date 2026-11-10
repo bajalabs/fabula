@@ -63,3 +63,54 @@ describe('envSchema without the deployment-specific values', () => {
     }
   })
 })
+
+describe('envSchema, the rest of the configuration', () => {
+  const keys = '{"billing-api":"' + 'ab'.repeat(32) + '"}'
+
+  it('documents its defaults', () => {
+    const env = envSchema.parse({ FABULA_HMAC_KEYS: keys })
+    expect(env).toMatchObject({
+      FABULA_AUTH: 'hmac',
+      FABULA_BODY_LIMIT_BYTES: 8 * 1024 * 1024,
+      FABULA_MAX_CONCURRENT_RENDERS: 6,
+      FABULA_RENDER_TIMEOUT_SECONDS: 60,
+      FABULA_ASSET_MAX_BYTES: 10 * 1024 * 1024,
+      FABULA_ASSET_TIMEOUT_SECONDS: 15,
+      FABULA_ASSET_CACHE_MAX_BYTES: 512 * 1024 * 1024,
+      FABULA_IMAGE_MAX_PIXELS: 40_000_000,
+      FABULA_ENGINES: ['typst', 'pandoc', 'quarto', 'weasyprint', 'mjml', 'chromium'],
+      FABULA_ALLOW_INLINE_SOURCE: true,
+      FABULA_REQUIRE_ENGINES: true,
+      FABULA_DRAIN_SECONDS: 30,
+      FABULA_CHROMIUM_PATH: 'chromium',
+    })
+  })
+
+  it('needs the keys of its auth mode, and only those', () => {
+    expect(envSchema.safeParse({}).success).toBe(false)
+    expect(envSchema.safeParse({ FABULA_AUTH: 'token' }).success).toBe(false)
+    expect(envSchema.safeParse({ FABULA_AUTH: 'token', FABULA_TOKENS: JSON.stringify({ me: 't'.repeat(32) }) }).success).toBe(true)
+    expect(envSchema.safeParse({ FABULA_AUTH: 'token', FABULA_TOKENS: JSON.stringify({ me: 'short' }) }).success).toBe(false)
+    expect(envSchema.safeParse({ FABULA_AUTH: 'token', FABULA_TOKENS: JSON.stringify({ me: `${'t'.repeat(32)} x` }) }).success).toBe(false)
+    expect(envSchema.safeParse({ FABULA_AUTH: 'basic', FABULA_HMAC_KEYS: keys }).success).toBe(false)
+  })
+
+  it('reads FABULA_ENGINES as a list of known engines', () => {
+    expect(envSchema.parse({ FABULA_HMAC_KEYS: keys, FABULA_ENGINES: ' Typst, mjml ' }).FABULA_ENGINES).toEqual(['typst', 'mjml'])
+    expect(envSchema.safeParse({ FABULA_HMAC_KEYS: keys, FABULA_ENGINES: 'typst,latex' }).success).toBe(false)
+    expect(envSchema.safeParse({ FABULA_HMAC_KEYS: keys, FABULA_ENGINES: ' , ' }).success).toBe(false)
+  })
+
+  it('sets the runtime settings from the environment it validates', async () => {
+    const { settings, resetSettings } = await import('../src/config/settings.js')
+    const { validateEnv } = await import('../src/config/env.js')
+    try {
+      validateEnv({ FABULA_HMAC_KEYS: keys, FABULA_RENDER_TIMEOUT_SECONDS: '5', FABULA_ENGINES: 'typst', FABULA_ALLOW_INLINE_SOURCE: 'false', FABULA_ASSET_CACHE_DIR: 'cache' })
+      expect(settings()).toMatchObject({ renderTimeoutMs: 5000, allowInlineSource: false })
+      expect([...settings().engines]).toEqual(['typst'])
+      expect(settings().assetCacheDir).toMatch(/\/cache$/)
+    } finally {
+      resetSettings()
+    }
+  })
+})

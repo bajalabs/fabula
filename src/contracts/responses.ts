@@ -3,7 +3,6 @@
 import { z } from 'zod'
 
 import {
-  renderFormatSchema,
   compileErrorSchema,
   validationIssueSchema,
 } from './common.js'
@@ -56,12 +55,8 @@ export const validateDataResponseSchema = z.object({
 // ── Health response ────────────────────────────────────────────────
 export const healthResponseSchema = z.object({
   status: z.enum(['ready', 'degraded']),
-  engines: z.array(renderFormatSchema),
-  typstVersion: z.string().nullable().optional(),
-  pandocVersion: z.string().nullable().optional(),
-  quartoVersion: z.string().nullable().optional(),
-  weasyprintVersion: z.string().nullable().optional(),
-  mjmlVersion: z.string().nullable().optional(),
+  // Each enabled engine (typst, pandoc, quarto, weasyprint, mjml, chromium): its version, null when missing
+  engines: z.record(z.string(), z.string().nullable()),
   uptimeSec: z.number().int(),
 })
 

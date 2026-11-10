@@ -4,6 +4,10 @@
    PDFs go through Typst (--pdf-engine=typst), so no TeX installation is needed. The field values reach the document as
    `#let key = value` lines in a raw Typst block, as in TypstEngine; an HTML output drops that block.
 
+   Pandoc runs with --sandbox: its readers and writers read only the files on its command line, so a source cannot
+   pull a server file into a .docx or an HTML page; it also runs with engineEnv() (no service secret, no reachable
+   network) and is killed at FABULA_RENDER_TIMEOUT_SECONDS. The PDF's Typst is confined by Typst's own root.
+
    Word and PowerPoint take a reference document per brand: Pandoc's own default reference.docx / reference.pptx with
    the brand's theme (accent colours, heading and body typefaces) written by scripts/office-theme.py. These are the
    editable files; a .docx edited elsewhere comes back as format 'docx' (base64 source) and leaves as the final PDF. */
@@ -21,6 +25,8 @@ import type {
 } from '../../contracts/index.js'
 import { pandocPdfArgs, readPdfOptions } from '../../contracts/pdf-options.js'
 import { toTypstLiteral, type FieldTypeHint } from '../../util/typst-literal.js'
+import { settings } from '../../config/settings.js'
+import { engineEnv } from './subprocess.js'
 import {
   BrandIdentityService,
   brandFamilies,
@@ -77,7 +83,6 @@ const OFFICE_THEME_SCRIPT = resolve(process.cwd(), 'scripts', 'office-theme.py')
 /** A .docx read back: what it may become, and its size cap. */
 const DOCX_INPUT_OUTPUTS: readonly OutputType[] = ['pdf', 'html']
 const DOCX_MAX_BYTES = 20 * 1024 * 1024
-const PANDOC_TIMEOUT_MS = 120_000
 
 const fail = (message: string): { ok: false; errors: CompileError[] } => ({ ok: false, errors: [{ severity: 'error', message }] })
 
@@ -88,10 +93,10 @@ function run(
   opts: { cwd: string; env?: NodeJS.ProcessEnv },
 ): Promise<{ code: number | null; stdout: Buffer; stderr: string; error?: string }> {
   return new Promise((done) => {
-    const proc = spawn(cmd, args, { cwd: opts.cwd, env: opts.env ?? process.env })
+    const proc = spawn(cmd, args, { cwd: opts.cwd, env: opts.env ?? engineEnv() })
     const out: Buffer[] = []
     const err: Buffer[] = []
-    const timer = setTimeout(() => proc.kill('SIGKILL'), PANDOC_TIMEOUT_MS)
+    const timer = setTimeout(() => proc.kill('SIGKILL'), settings().renderTimeoutMs)
     proc.stdout.on('data', (c: Buffer) => out.push(c))
     proc.stderr.on('data', (c: Buffer) => err.push(c))
     proc.on('error', (e: Error) => {
@@ -187,6 +192,7 @@ export class PandocEngine implements RenderEngine {
       }
 
       const args: string[] = [
+        '--sandbox',
         entryPath,
         input === 'docx' ? '--from=docx' : '--from=markdown+raw_attribute',
         `--to=${req.output}`,
@@ -224,13 +230,7 @@ export class PandocEngine implements RenderEngine {
       const outPath = office ? join(workDir, `out.${office}`) : null
       args.push(outPath ? `--output=${outPath}` : '--output=-')
 
-      const pkgCache = process.env.TYPST_PACKAGE_CACHE_PATH
-      const env: NodeJS.ProcessEnv = {
-        ...process.env,
-        ...(pkgCache ? { TYPST_PACKAGE_CACHE_PATH: pkgCache } : {}),
-      }
-
-      const r = await run('pandoc', args, { cwd: workDir, env })
+      const r = await run('pandoc', args, { cwd: workDir })
       if (r.error) return fail(`pandoc spawn failed: ${r.error}`)
       if (r.code !== 0) return { ok: false, errors: parseErrors(r.stderr) }
       return {

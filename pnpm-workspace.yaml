@@ -1,5 +1,7 @@
 # A single package; this file makes the folder its own pnpm root.
 packages:
   - "."
+# Install scripts allowed to run: esbuild (tsx) and SWC (the test transform) check their native binaries
 onlyBuiltDependencies:
   - esbuild
+  - "@swc/core"

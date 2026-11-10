@@ -130,8 +130,8 @@ describe('engines × brand record', () => {
         if (cmd === 'quarto') {
           const to = args[args.indexOf('--to') + 1]
           writeFileSync(join(workDir, `main.${to === 'html' ? 'html' : 'pdf'}`), '%PDF-fake')
-        } else if (cmd === 'weasyprint') {
-          writeFileSync(args[1], '%PDF-fake')
+        } else if (cmd === 'python3' && args[0].endsWith('weasyprint-render.py')) {
+          writeFileSync(args[2], '%PDF-fake')
         } else {
           proc.stdout.emit('data', Buffer.from('%PDF-fake'))
         }
@@ -204,11 +204,12 @@ describe('engines × brand record', () => {
       expect(call.files).toContain(`_shared/fonts/${sha(TTF)}.ttf`)
     })
 
-    it('keeps a legacy PDF request as it was', async () => {
+    it('runs a plain PDF request in its sandbox, with the brand fonts as variables', async () => {
       const engine = new PandocEngine(identity, assets)
       await engine.render(request(brandIdentitySchema.parse(LEGACY), 'pdf', '# Hello'))
       const [call] = calls
       expect(call.args).toEqual([
+        '--sandbox',
         join(call.workDir, 'main.md'),
         '--from=markdown+raw_attribute',
         '--to=pdf',
@@ -276,6 +277,33 @@ describe('engines × brand record', () => {
       await engine.render(request(brandIdentitySchema.parse(RECORD), 'html', 'Hello'))
       expect(calls[0].files).toContain(`_shared/fonts/${sha(WOFF2)}.woff2`)
       expect(calls[0].files).not.toContain(`_shared/fonts/${sha(TTF)}.ttf`)
+    })
+  })
+
+  describe('every engine process', () => {
+    it('gets no secret of the service and a proxy that answers nothing', async () => {
+      process.env.FABULA_HMAC_KEYS = '{"leak":"' + 'ab'.repeat(32) + '"}'
+      try {
+        const brand = brandIdentitySchema.parse(LEGACY)
+        await new TypstEngine(identity, assets).render(request(brand, 'pdf', '= Hello'))
+        await new PandocEngine(identity, assets).render(request(brand, 'pdf', '# Hello'))
+        await new QuartoEngine(identity, assets).render(request(brand, 'pdf', 'Hello'))
+        await new WeasyPrintEngine(identity, assets).render(request(brand, 'pdf', '<p>Hello</p>'))
+      } finally {
+        delete process.env.FABULA_HMAC_KEYS
+      }
+      expect(calls.map((c) => c.cmd)).toEqual(['typst', 'pandoc', 'quarto', 'python3'])
+      for (const call of calls) {
+        expect(Object.keys(call.env ?? {}).filter((k) => k.startsWith('FABULA_')), call.cmd).toEqual([])
+        expect(call.env?.HTTPS_PROXY, call.cmd).toBe('http://127.0.0.1:9')
+        expect(call.env?.https_proxy, call.cmd).toBe('http://127.0.0.1:9')
+      }
+    })
+
+    it('runs WeasyPrint through the wrapper that confines its URL fetcher', async () => {
+      await new WeasyPrintEngine(identity, assets).render(request(brandIdentitySchema.parse(LEGACY), 'pdf', '<p>Hello</p>'))
+      expect(calls[0].args[0]).toMatch(/scripts\/weasyprint-render\.py$/)
+      expect(calls[0].args.slice(1, 3)).toEqual([join(calls[0].workDir, 'main.html'), join(calls[0].workDir, 'main.pdf')])
     })
   })
 

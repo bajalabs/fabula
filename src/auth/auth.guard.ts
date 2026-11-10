@@ -1,7 +1,11 @@
-/* AuthGuard: every request but a @Public() one is signed by a known caller (src/auth/signature.ts), inside a 60 s
-   window; a POST, PUT, PATCH or DELETE signature is accepted once per process.
+/* AuthGuard: every request but a @Public() one comes from a known caller.
 
-   main.ts sets rawBody: true on the Fastify adapter, so `req.rawBody` carries the exact bytes the caller signed. */
+   FABULA_AUTH=hmac (the default): the request is signed (src/auth/signature.ts), inside a 60 s window; a POST, PUT,
+   PATCH or DELETE signature is accepted once per process. main.ts sets rawBody: true on the Fastify adapter, so
+   `req.rawBody` carries the exact bytes the caller signed.
+
+   FABULA_AUTH=token: `Authorization: Bearer <token>`, one of FABULA_TOKENS. Simpler, but the token is the whole
+   secret and travels with every request: use it only behind TLS, and prefer hmac where the caller can sign. */
 
 import { type CanActivate, type ExecutionContext, Injectable, UnauthorizedException } from '@nestjs/common'
 import { Reflector } from '@nestjs/core'
@@ -40,7 +44,16 @@ export class AuthGuard implements CanActivate {
   canActivate(context: ExecutionContext): boolean {
     const isPublic = this.reflector.getAllAndOverride<boolean>(IS_PUBLIC_KEY, [context.getHandler(), context.getClass()])
     if (isPublic) return true
-    return this.verify(context.switchToHttp().getRequest<FastifyLikeRequest>())
+    const req = context.switchToHttp().getRequest<FastifyLikeRequest>()
+    return this.callers.mode === 'token' ? this.verifyToken(req) : this.verify(req)
+  }
+
+  private verifyToken(req: FastifyLikeRequest): boolean {
+    const header = single(req.headers.authorization)
+    const m = header?.match(/^Bearer ([\x21-\x7e]{1,512})$/)
+    if (!m) throw new UnauthorizedException({ error: { code: 'missing_token', message: 'Authorization: Bearer <token> required' } })
+    if (!this.callers.callerForToken(m[1])) throw new UnauthorizedException({ error: { code: 'invalid_token', message: 'unknown token' } })
+    return true
   }
 
   private verify(req: FastifyLikeRequest): boolean {

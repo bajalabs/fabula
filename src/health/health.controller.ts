@@ -1,26 +1,19 @@
 /* HealthController, three public routes:
 
-     GET /health   the engines and their versions, and the uptime. Always 200.
+     GET /health   every enabled engine and its version (null when its binary is missing), and the uptime. Always
+                   200; `status` is `ready` when every enabled engine was found, else `degraded`.
      GET /healthz  liveness: the process answers. Always 200.
-     GET /readyz   readiness: 200 once the engine preflight has run and, with ENGINE_PREFLIGHT_REQUIRED=true, every
-                   engine binary was found; 503 otherwise, so a load balancer holds traffic back. */
+     GET /readyz   readiness: 200 once the engine preflight has run and, with FABULA_REQUIRE_ENGINES=true (the
+                   default), every enabled engine was found; 503 otherwise, so a load balancer holds traffic back. */
 
-import {
-  Controller,
-  Get,
-  HttpCode,
-  HttpException,
-  HttpStatus,
-} from '@nestjs/common'
-import type {
-  HealthResponse,
-  RenderFormat,
-} from '../contracts/index.js'
+import { Controller, Get, HttpCode, HttpException, HttpStatus } from '@nestjs/common'
+import type { HealthResponse } from '../contracts/index.js'
 import { RENDER_ENDPOINTS } from '../contracts/index.js'
 import { Public } from '../auth/public.decorator.js'
 import { EnginePreflightService } from './engine-preflight.service.js'
 
 const startedAt = Date.now()
+const uptimeSec = () => Math.round((Date.now() - startedAt) / 1000)
 
 interface MinimalProbeResponse {
   status: 'ok' | 'not_ready'
@@ -35,74 +28,31 @@ export class HealthController {
   @Get(RENDER_ENDPOINTS.health)
   health(): HealthResponse {
     const result = this.preflight.getResult()
-    const bins = result?.binaries ?? {
-      typst: null,
-      pandoc: null,
-      quarto: null,
-      weasyprint: null,
-    }
-
-    const engines: RenderFormat[] = []
-    if (bins.typst) engines.push('typst')
-    if (bins.pandoc) engines.push('markdown')
-    if (bins.quarto) engines.push('quarto')
-    if (bins.weasyprint) engines.push('html')
-    if (result?.mjmlVersion) engines.push('mjml')
-
     return {
-      // 'ready' when Typst is present (the PDF path most templates take), else 'degraded'
-      status: bins.typst ? 'ready' : 'degraded',
-      engines,
-      typstVersion: bins.typst,
-      pandocVersion: bins.pandoc,
-      quartoVersion: bins.quarto,
-      weasyprintVersion: bins.weasyprint,
-      mjmlVersion: result?.mjmlVersion ?? null,
-      uptimeSec: Math.round((Date.now() - startedAt) / 1000),
+      status: result && result.missing.length === 0 ? 'ready' : 'degraded',
+      engines: result?.versions ?? {},
+      uptimeSec: uptimeSec(),
     }
   }
 
-  /** The process is up and its event loop answers; no engine is needed. */
   @Get('/healthz')
   @HttpCode(HttpStatus.OK)
   liveness(): MinimalProbeResponse {
-    return {
-      status: 'ok',
-      uptimeSec: Math.round((Date.now() - startedAt) / 1000),
-    }
+    return { status: 'ok', uptimeSec: uptimeSec() }
   }
 
-  /** 503 until the preflight has run and, when it is required, every engine binary was found. */
   @Get('/readyz')
   readiness(): MinimalProbeResponse {
     const result = this.preflight.getResult()
-
     if (!result) {
+      throw new HttpException({ status: 'not_ready', reason: 'preflight-incomplete', uptimeSec: uptimeSec() }, HttpStatus.SERVICE_UNAVAILABLE)
+    }
+    if (this.preflight.isGateEnabled() && result.missing.length > 0) {
       throw new HttpException(
-        {
-          status: 'not_ready',
-          reason: 'preflight-incomplete',
-          uptimeSec: Math.round((Date.now() - startedAt) / 1000),
-        },
+        { status: 'not_ready', reason: 'missing-engines', missing: result.missing, uptimeSec: uptimeSec() },
         HttpStatus.SERVICE_UNAVAILABLE,
       )
     }
-
-    if (this.preflight.isGateEnabled() && !result.allBinariesPresent) {
-      throw new HttpException(
-        {
-          status: 'not_ready',
-          reason: 'missing-binaries',
-          missing: result.missingBinaries,
-          uptimeSec: Math.round((Date.now() - startedAt) / 1000),
-        },
-        HttpStatus.SERVICE_UNAVAILABLE,
-      )
-    }
-
-    return {
-      status: 'ok',
-      uptimeSec: Math.round((Date.now() - startedAt) / 1000),
-    }
+    return { status: 'ok', uptimeSec: uptimeSec() }
   }
 }

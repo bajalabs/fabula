@@ -1,16 +1,17 @@
 /* BrandAssetsService: brings a brand's font and logo files, and a document's pictures, into a render's work
    directory.
 
-   Each file arrives as an https URL plus the sha256 of its bytes. Per file:
+   Each file arrives as an https URL plus the sha256 of its bytes. Per file (the limits are src/config/settings.ts):
      • https only, and only from a host on FABULA_ASSET_HOSTS (an exact name, or `*.example.com` for the names under
        it, with `:port` when it is not 443; unset, nothing is fetched), so a signed caller cannot point Fabula
        anywhere else.
-     • `redirect: 'error'`, a 15 s timeout, at most 10 MB (the body is read in chunks and abandoned past the cap).
+     • `redirect: 'error'`, FABULA_ASSET_TIMEOUT_SECONDS (15), at most FABULA_ASSET_MAX_BYTES (10 MiB; the body is
+       read in chunks and abandoned past the cap).
      • The sha256 of the bytes must equal the declared one, else the render fails with a compile-style error that
        names the asset (kind, role or variant) and the host, never the path or the query string, which may carry a
        signature.
-     • Content-addressed cache under os.tmpdir()/fabula-assets/<sha256>.<ext>, written atomically, so a second
-       render of the same brand does not refetch.
+     • Content-addressed cache in FABULA_ASSET_CACHE_DIR as <sha256>.<ext>, written atomically, so a second render
+       of the same brand does not refetch.
      • Linked (or copied) into <workDir>/_shared/fonts/ and <workDir>/_shared/logos/ first, then read and hashed
        there: once the link exists, an eviction by another render cannot take the file away, and a cache entry that
        was evicted in between, or that does not verify, is fetched again. The work directory goes with the engine's
@@ -21,18 +22,18 @@
 
    A document's pictures (cards in one-pager@1 and checklist@1) come the same way and under the same rules, into
    _shared/images/, named by hash with the extension their bytes prove: PNG, JPEG or WebP, nothing else, and at most
-   40 million pixels by their header. A logo's bytes must be the format it claims: a PNG is measured against the same
+   FABULA_IMAGE_MAX_PIXELS (40 million) by their header. A logo's bytes must be the format it claims: a PNG is measured against the same
    bound, an SVG is XML text with no DOCTYPE or entity (no expansion bomb), a PDF starts with %PDF-.
 
-   The cache holds at most 512 MB: past that, the files used longest ago go first. */
+   The cache holds at most FABULA_ASSET_CACHE_MAX_BYTES (512 MiB): past that, the files used longest ago go first. */
 
 import { Injectable, Logger } from '@nestjs/common'
 import { ConfigService } from '@nestjs/config'
 import { createHash, randomUUID } from 'node:crypto'
 import { copyFile, link, mkdir, readdir, readFile, rename, rm, stat, utimes, writeFile } from 'node:fs/promises'
-import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import type { Env } from '../../config/env.js'
+import { DEFAULT_SETTINGS, settings } from '../../config/settings.js'
 import { imageExtension, imageSize, type ImageExtension } from '../../util/image-file.js'
 import type {
   BrandFont,
@@ -43,10 +44,9 @@ import type {
   CompileError,
 } from '../../contracts/index.js'
 
-export const BRAND_ASSET_MAX_BYTES = 10 * 1024 * 1024
-export const BRAND_ASSET_TIMEOUT_MS = 15_000
-export const BRAND_ASSET_CACHE_MAX_BYTES = 512 * 1024 * 1024
-export const DOCUMENT_IMAGE_MAX_PIXELS = 40_000_000
+/** The defaults; the running values are settings(). */
+export const BRAND_ASSET_MAX_BYTES = DEFAULT_SETTINGS.assetMaxBytes
+export const DOCUMENT_IMAGE_MAX_PIXELS = DEFAULT_SETTINGS.imageMaxPixels
 
 /** Work-directory folders, relative to the work directory (posix). */
 export const BRAND_FONT_DIR = '_shared/fonts'
@@ -161,7 +161,7 @@ function pickPerKey<T extends { format: string }>(
  *  the runtime put it there. */
 function describeFetchError(err: unknown, url: URL): string {
   if (err instanceof Error && (err.name === 'TimeoutError' || err.name === 'AbortError')) {
-    return `timed out after ${BRAND_ASSET_TIMEOUT_MS / 1000} s`
+    return `timed out after ${settings().assetTimeoutMs / 1000} s`
   }
   const cause = err instanceof Error ? (err as Error & { cause?: unknown }).cause : undefined
   const parts = [err instanceof Error ? err.message : String(err)]
@@ -187,8 +187,8 @@ export function assetHostAllowed(hostname: string, hosts: readonly string[], por
 @Injectable()
 export class BrandAssetsService {
   /** Content-addressed cache; tests point it at a scratch folder. */
-  cacheDir = join(tmpdir(), 'fabula-assets')
-  cacheMaxBytes = BRAND_ASSET_CACHE_MAX_BYTES
+  cacheDir = settings().assetCacheDir
+  cacheMaxBytes = settings().assetCacheMaxBytes
 
   private readonly inflight = new Map<string, Promise<string>>()
   private readonly hosts: readonly string[]
@@ -383,7 +383,7 @@ export class BrandAssetsService {
     try {
       res = await fetch(url, {
         redirect: 'error',
-        signal: AbortSignal.timeout(BRAND_ASSET_TIMEOUT_MS),
+        signal: AbortSignal.timeout(settings().assetTimeoutMs),
       })
     } catch (err) {
       throw new BrandAssetError(`${spec.label}: fetch ${from} failed (${describeFetchError(err, url)})`)
@@ -393,10 +393,11 @@ export class BrandAssetsService {
       throw new BrandAssetError(`${spec.label}: fetch ${from} answered ${res.status}`)
     }
 
+    const maxBytes = settings().assetMaxBytes
     const tooLarge = () =>
-      new BrandAssetError(`${spec.label}: file ${from} is larger than ${BRAND_ASSET_MAX_BYTES / (1024 * 1024)} MB`)
+      new BrandAssetError(`${spec.label}: file ${from} is larger than ${Math.round((maxBytes / (1024 * 1024)) * 100) / 100} MB`)
     const declared = res.headers.get('content-length')
-    if (declared !== null && Number(declared) > BRAND_ASSET_MAX_BYTES) {
+    if (declared !== null && Number(declared) > maxBytes) {
       await res.body?.cancel().catch(() => {})
       throw tooLarge()
     }
@@ -410,7 +411,7 @@ export class BrandAssetsService {
           const { done, value } = await reader.read()
           if (done) break
           total += value.byteLength
-          if (total > BRAND_ASSET_MAX_BYTES) {
+          if (total > maxBytes) {
             await reader.cancel().catch(() => {})
             throw tooLarge()
           }
@@ -449,8 +450,9 @@ export class BrandAssetsService {
 function checkPixels(bytes: Buffer, ext: ImageExtension, label: string): void {
   const size = imageSize(bytes, ext)
   if (!size || size.width < 1 || size.height < 1) throw new BrandAssetError(`${label}: the file's size cannot be read`)
-  if (size.width * size.height > DOCUMENT_IMAGE_MAX_PIXELS) {
-    throw new BrandAssetError(`${label}: ${size.width}×${size.height} is more than ${DOCUMENT_IMAGE_MAX_PIXELS / 1_000_000} million pixels`)
+  const max = settings().imageMaxPixels
+  if (size.width * size.height > max) {
+    throw new BrandAssetError(`${label}: ${size.width}×${size.height} is more than ${max / 1_000_000} million pixels`)
   }
 }
 

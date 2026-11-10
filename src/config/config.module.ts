@@ -8,7 +8,8 @@ import { validateEnv } from './env.js'
     NestConfigModule.forRoot({
       isGlobal: true,
       cache: true,
-      expandVariables: true,
+      // The environment only: Docker, compose or `node --env-file` provide it
+      ignoreEnvFile: true,
       validate: validateEnv,
     }),
   ],

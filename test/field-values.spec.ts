@@ -106,7 +106,7 @@ describe('a named template', () => {
 
 describe('the orchestrator, for any request however it came', () => {
   const config = {
-    get: (k: string) => (k === 'FABULA_MAX_CONCURRENT_RENDERS' ? 4 : k === 'SHUTDOWN_DRAIN_SECONDS' ? 1 : undefined),
+    get: (k: string) => (k === 'FABULA_MAX_CONCURRENT_RENDERS' ? 4 : k === 'FABULA_DRAIN_SECONDS' ? 1 : undefined),
   } as unknown as ConfigService<Env, true>
   const seen: EngineRenderRequest[] = []
   const fake = (format: RenderFormat, outputs: OutputType[]): RenderEngine =>

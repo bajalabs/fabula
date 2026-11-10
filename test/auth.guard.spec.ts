@@ -14,7 +14,7 @@ import {
   signRequest,
 } from '../src/auth/signature.js'
 import { AuthGuard } from '../src/auth/auth.guard.js'
-import type { CallerRegistry } from '../src/auth/callers.js'
+import { CallerRegistry } from '../src/auth/callers.js'
 
 const ALLOWED_CALLER = 'reports'
 
@@ -201,5 +201,30 @@ describe('SeenSignatures', () => {
     expect(seen.record('k', 100, 160)).toBe(false)
     expect(seen.record('k', 100, 161)).toBe(true)
     expect(seen.size).toBe(1)
+  })
+})
+
+describe('AuthGuard, FABULA_AUTH=token', () => {
+  const TOKEN = 'tok_' + 'x'.repeat(40)
+  const registry = new CallerRegistry({
+    get: (k: string) => (k === 'FABULA_AUTH' ? 'token' : k === 'FABULA_TOKENS' ? { reports: TOKEN } : undefined),
+  } as never)
+  const guard = new AuthGuard(makeReflector(), registry)
+  const withAuth = (authorization?: string) =>
+    signedContext(authorization ? { authorization } : {}, { url: '/render', body: '{}' })
+
+  it('passes a known bearer token, and the same token again', () => {
+    expect(guard.canActivate(withAuth(`Bearer ${TOKEN}`))).toBe(true)
+    expect(guard.canActivate(withAuth(`Bearer ${TOKEN}`))).toBe(true)
+  })
+
+  it('refuses no token, another scheme, and an unknown token', () => {
+    expect(refusal(guard, withAuth())).toBe('missing_token')
+    expect(refusal(guard, withAuth(`Basic ${TOKEN}`))).toBe('missing_token')
+    expect(refusal(guard, withAuth(`Bearer ${TOKEN}x`))).toBe('invalid_token')
+  })
+
+  it('does not take a signature in token mode', () => {
+    expect(refusal(guard, signedContext(signedHeaders(), { url: '/render?dry=1', body: '{"x":1}' }))).toBe('missing_token')
   })
 })

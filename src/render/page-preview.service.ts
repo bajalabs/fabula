@@ -2,7 +2,7 @@
 
    One path for every engine: Poppler's `pdfinfo` reads the page count and `pdftoppm` rasterises the PDF the engine
    wrote, at the asked resolution. At most `maxPages` pages come back; `pageCount` says how many the PDF has. Per
-   render: its own temp dir, a 60 s limit, a stripped environment, nothing left behind. */
+   render: its own temp dir, FABULA_RENDER_TIMEOUT_SECONDS, engineEnv(), nothing left behind. */
 
 import { Injectable } from '@nestjs/common'
 import { spawn } from 'node:child_process'
@@ -11,8 +11,9 @@ import { mkdir, readdir, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import type { CompileError, PagePreview, PreviewOptions } from '../contracts/index.js'
+import { settings } from '../config/settings.js'
+import { engineEnv } from './engines/subprocess.js'
 
-const TIMEOUT_MS = 60_000
 
 export type PagePreviewResult =
   | { ok: true; pages: PagePreview[]; pageCount: number }
@@ -36,7 +37,7 @@ function run(cmd: string, args: string[], cwd: string): Promise<{ code: number |
   return new Promise((resolve) => {
     const proc = spawn(cmd, args, {
       cwd,
-      env: { PATH: process.env.PATH ?? '/usr/local/bin:/usr/bin:/bin', LANG: 'C.UTF-8', LC_ALL: 'C.UTF-8' },
+      env: engineEnv(),
       stdio: ['ignore', 'pipe', 'pipe'],
     })
     const out: Buffer[] = []
@@ -45,7 +46,7 @@ function run(cmd: string, args: string[], cwd: string): Promise<{ code: number |
     const timer = setTimeout(() => {
       timedOut = true
       proc.kill('SIGKILL')
-    }, TIMEOUT_MS)
+    }, settings().renderTimeoutMs)
     proc.stdout.on('data', (c: Buffer) => out.push(c))
     proc.stderr.on('data', (c: Buffer) => err.push(c))
     proc.on('error', (e) => {
@@ -70,14 +71,14 @@ export class PagePreviewService {
       await writeFile(join(dir, 'in.pdf'), pdf)
 
       const info = await run('pdfinfo', ['in.pdf'], dir)
-      if (info.timedOut) return failure(`pdfinfo timed out after ${TIMEOUT_MS / 1000} s`)
+      if (info.timedOut) return failure(`pdfinfo timed out after ${settings().renderTimeoutMs / 1000} s`)
       if (info.code !== 0) return failure(`pdfinfo could not read the PDF: ${info.stderr.trim().slice(0, 300)}`)
       const pageCount = parseInt(info.stdout.match(/^Pages:\s+(\d+)/m)?.[1] ?? '0', 10)
       if (!pageCount) return failure('the PDF has no pages')
 
       const last = Math.min(pageCount, opts.maxPages)
       const ras = await run('pdftoppm', ['-png', '-r', String(opts.ppi), '-f', '1', '-l', String(last), 'in.pdf', 'p'], dir)
-      if (ras.timedOut) return failure(`pdftoppm timed out after ${TIMEOUT_MS / 1000} s`)
+      if (ras.timedOut) return failure(`pdftoppm timed out after ${settings().renderTimeoutMs / 1000} s`)
       if (ras.code !== 0) return failure(`pdftoppm failed: ${ras.stderr.trim().slice(0, 300)}`)
 
       const files = (await readdir(dir))

@@ -1,7 +1,14 @@
 /* QuartoEngine: .qmd to PDF (through Quarto's typst format and its bundled Typst) or HTML, with `quarto render`.
 
-   Code cells are never executed unless engineConfig.allowCodeExecution is true, and the image carries no R or
-   Jupyter kernel. Each render gets its own work directory, a kill-after timeout and a stripped environment. */
+   Code cells are never executed (`execute: enabled: false`, and the image carries no R or Jupyter kernel). Each render
+   gets its own work directory, engineEnv() (no service secret, no reachable network) and FABULA_RENDER_TIMEOUT_SECONDS
+   (engineConfig.timeoutMs may only shorten it).
+
+   Quarto is a document system that trusts its documents: an image path or an include can read any file the service
+   can. Before the render, a source is refused when its front matter names something that loads code or files
+   (filters, shortcodes, engines, includes, templates, metadata files…) or when it uses a shortcode other than
+   pagebreak, meta, var, kbd, lipsum and placeholder. That narrows what a source can do; it is not a sandbox, and
+   SECURITY.md says what to do when the callers who send sources are not trusted. */
 
 import { Injectable } from '@nestjs/common'
 import { spawn } from 'node:child_process'
@@ -15,7 +22,10 @@ import type {
   RenderFormat,
 } from '../../contracts/index.js'
 import { quartoPdfYaml, readPdfOptions } from '../../contracts/pdf-options.js'
+import YAML from 'yaml'
 import { toTypstLiteral, type FieldTypeHint } from '../../util/typst-literal.js'
+import { settings } from '../../config/settings.js'
+import { engineEnv } from './subprocess.js'
 import { BrandIdentityService } from '../brand/brand-identity.service.js'
 import {
   BrandAssetsService,
@@ -28,14 +38,48 @@ import type {
   RenderEngine,
 } from '../../contracts/engine.js'
 
-const DEFAULT_TIMEOUT_MS = 30_000
-const CODE_EXEC_TIMEOUT_MS = 60_000
+/** Front-matter keys that load code or files, refused at any depth. */
+const DENIED_KEYS = new Set([
+  'filters', 'shortcodes', 'engine', 'engines', 'jupyter', 'knitr', 'execute', 'execute-dir', 'extensions', 'project',
+  'include-in-header', 'include-before-body', 'include-after-body', 'include-before', 'include-after',
+  'metadata-files', 'template', 'template-partials', 'resources', 'resource-path', 'output-dir', 'output-file',
+  'pdf-engine', 'pdf-engine-opt', 'pdf-engine-opts', 'bibliography', 'csl', 'citation-abbreviations',
+])
+/** Shortcodes that read nothing outside the document. */
+const ALLOWED_SHORTCODES = new Set(['pagebreak', 'meta', 'var', 'kbd', 'lipsum', 'placeholder'])
+
+/** Why Quarto must not render `source`; empty when nothing is refused. */
+export function quartoSourceProblems(source: string): string[] {
+  const problems: string[] = []
+  for (const m of source.matchAll(/(?<!\{)\{\{<\s*([A-Za-z0-9_-]*)/g)) {
+    const name = m[1].toLowerCase()
+    if (!ALLOWED_SHORTCODES.has(name)) problems.push(`the {{< ${name || '?'} >}} shortcode is refused (allowed: ${[...ALLOWED_SHORTCODES].join(', ')})`)
+  }
+  const walk = (v: unknown, path: string) => {
+    if (Array.isArray(v)) v.forEach((x, i) => walk(x, `${path}[${i}]`))
+    else if (v && typeof v === 'object') {
+      for (const [k, x] of Object.entries(v)) {
+        const here = path ? `${path}.${k}` : k
+        if (DENIED_KEYS.has(k.toLowerCase())) problems.push(`front matter \`${here}\` loads code or files and is refused`)
+        walk(x, here)
+      }
+    }
+  }
+  // Pandoc reads a YAML block anywhere in the document: every --- … --- (or …) block that parses is checked
+  for (const m of source.matchAll(/^---[ \t]*\r?\n([\s\S]*?)\r?\n(?:---|\.\.\.)[ \t]*$/gm)) {
+    try {
+      walk(YAML.parse(m[1]), '')
+    } catch {
+      // not YAML: Pandoc reads it as a rule and text, not as metadata
+    }
+  }
+  return [...new Set(problems)]
+}
 
 export function composeSource(
   userSource: string,
   fields: EngineRenderRequest['fields'],
   values: Record<string, unknown>,
-  allowCodeExecution: boolean,
 ): string {
   const letLines = fields.map((f) => {
     const raw = Object.prototype.hasOwnProperty.call(values, f.key)
@@ -50,16 +94,9 @@ export function composeSource(
     letLines.join('\n') +
     '\n```\n\n'
 
-  // If the doc already has YAML frontmatter, leave it alone — we
-  // inject defaults via a sidecar _quarto.yml. If the doc starts
-  // without frontmatter, add a minimal one so Quarto knows the
-  // format. Either way, prepend the execute-guard if code exec
-  // is disabled (takes precedence over doc-level settings).
+  // A document with its own front matter keeps it (its `execute` was refused above); one without gets a minimal one
   const startsWithFrontmatter = userSource.trimStart().startsWith('---')
-
-  const execGuard = allowCodeExecution
-    ? ''
-    : '---\nexecute:\n  enabled: false\n---\n'
+  const execGuard = '---\nexecute:\n  enabled: false\n---\n'
 
   if (startsWithFrontmatter) {
     return execGuard + typstPreamble + userSource
@@ -88,7 +125,6 @@ function parseErrors(stderr: string): CompileError[] {
 }
 
 interface QuartoOptions {
-  allowCodeExecution?: boolean
   timeoutMs?: number
 }
 
@@ -116,10 +152,11 @@ export class QuartoEngine implements RenderEngine {
     }
 
     const opts = (req.engineConfig ?? {}) as QuartoOptions
-    const allowCodeExec = opts.allowCodeExecution === true
-    const timeoutMs =
-      opts.timeoutMs ??
-      (allowCodeExec ? CODE_EXEC_TIMEOUT_MS : DEFAULT_TIMEOUT_MS)
+    const limit = settings().renderTimeoutMs
+    const timeoutMs = typeof opts.timeoutMs === 'number' && opts.timeoutMs > 0 ? Math.min(opts.timeoutMs, limit) : limit
+
+    const problems = quartoSourceProblems(req.source)
+    if (problems.length) return { ok: false, errors: problems.map((message) => ({ severity: 'error', message, file: 'main.qmd' })) }
 
     // Tagged by default; PDF/UA-1 and PDF/A when the template asks
     const pdfOpts = readPdfOptions(req.engineConfig)
@@ -163,18 +200,13 @@ export class QuartoEngine implements RenderEngine {
         '  html:',
         '    embed-resources: true',
         'execute:',
-        `  enabled: ${allowCodeExec ? 'true' : 'false'}`,
+        '  enabled: false',
         '  cache: false',
         '',
       ].join('\n')
       await writeFile(join(workDir, '_quarto.yml'), quartoYml, 'utf-8')
 
-      const composed = composeSource(
-        req.source,
-        req.fields,
-        req.values,
-        allowCodeExec,
-      )
+      const composed = composeSource(req.source, req.fields, req.values)
       const entryName = 'main.qmd'
       const entryPath = join(workDir, entryName)
       await writeFile(entryPath, composed, 'utf-8')
@@ -184,21 +216,12 @@ export class QuartoEngine implements RenderEngine {
       const toFormat = req.output === 'pdf' ? 'typst' : 'html'
       const args = ['render', entryName, '--to', toFormat, '--no-cache']
 
-      // Stripped env — pass through what Typst/Quarto actually need
-      const baseEnv: NodeJS.ProcessEnv = {
-        PATH: process.env.PATH ?? '/usr/local/bin:/usr/bin:/bin',
-        HOME: process.env.HOME ?? '/tmp',
-        LANG: 'C.UTF-8',
-        LC_ALL: 'C.UTF-8',
-      }
-      const pkgCache = process.env.TYPST_PACKAGE_CACHE_PATH
-      if (pkgCache) baseEnv.TYPST_PACKAGE_CACHE_PATH = pkgCache
-      // Typst's own variable for --font-path, for a typst Quarto spawns
-      // without font flags of its own
-      if (fontDir) baseEnv.TYPST_FONT_PATHS = fontDir
-      // Explicitly disable telemetry that Quarto would otherwise phone home
-      baseEnv.QUARTO_NO_ANALYTICS = '1'
-      baseEnv.QUARTO_CHROME_ERROR_ON_MISSING = '1'
+      // Typst's own variable for --font-path, for the typst Quarto spawns without font flags of its own; no analytics
+      const baseEnv = engineEnv({
+        TYPST_FONT_PATHS: fontDir ?? undefined,
+        QUARTO_NO_ANALYTICS: '1',
+        QUARTO_CHROME_ERROR_ON_MISSING: '1',
+      })
 
       return await new Promise<EngineRenderResult>((resolve) => {
         const proc = spawn('quarto', args, {

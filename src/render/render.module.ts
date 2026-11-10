@@ -10,6 +10,7 @@ import { PandocEngine } from './engines/pandoc.engine.js'
 import { QuartoEngine } from './engines/quarto.engine.js'
 import { WeasyPrintEngine } from './engines/weasyprint.engine.js'
 import { MjmlEngine } from './engines/mjml.engine.js'
+import { ChromiumEngine } from './engines/chromium.engine.js'
 import { PagePreviewService } from './page-preview.service.js'
 import { TemplateRegistryService } from './template-registry.service.js'
 import { RenderCallbackService } from './render-callback.service.js'
@@ -30,6 +31,7 @@ import { RenderCallbackService } from './render-callback.service.js'
     QuartoEngine,
     WeasyPrintEngine,
     MjmlEngine,
+    ChromiumEngine,
   ],
   exports: [OrchestratorService],
 })

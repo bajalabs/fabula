@@ -48,7 +48,7 @@ function makeConfig(opts: {
     get: (key: string) => {
       if (key === 'FABULA_MAX_CONCURRENT_RENDERS')
         return opts.maxConcurrent ?? 4
-      if (key === 'SHUTDOWN_DRAIN_SECONDS') return opts.drainSeconds ?? 1
+      if (key === 'FABULA_DRAIN_SECONDS') return opts.drainSeconds ?? 1
       return undefined
     },
   } as unknown as ConfigService<Env, true>

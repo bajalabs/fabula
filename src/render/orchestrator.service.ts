@@ -1,7 +1,10 @@
-/* OrchestratorService: a render request goes to the first engine registered for its (format, output).
+/* OrchestratorService: a render request goes to the first enabled engine registered for its (format, output), in
+   this order: Typst, Pandoc (Markdown, and a .docx read back), Quarto, WeasyPrint, MJML, Chromium. HTML to PDF is
+   WeasyPrint's unless the request asks for `engineConfig.engine: "chromium"`; HTML to PNG or JPEG is Chromium's.
+   FABULA_ENGINES leaves engines out.
 
    At most FABULA_MAX_CONCURRENT_RENDERS renders run at once per process; above it a render is refused with 429.
-   On SIGTERM new renders are refused with 503 while the ones in flight get SHUTDOWN_DRAIN_SECONDS to finish, so an
+   On SIGTERM new renders are refused with 503 while the ones in flight get FABULA_DRAIN_SECONDS to finish, so an
    engine subprocess can write its output before Node exits. */
 
 import {
@@ -25,6 +28,8 @@ import { PandocEngine } from './engines/pandoc.engine.js'
 import { QuartoEngine } from './engines/quarto.engine.js'
 import { WeasyPrintEngine } from './engines/weasyprint.engine.js'
 import { MjmlEngine } from './engines/mjml.engine.js'
+import { ChromiumEngine } from './engines/chromium.engine.js'
+import { settings, type EngineName } from '../config/settings.js'
 import { PagePreviewService } from './page-preview.service.js'
 import { issuesAsErrors, parseRequestValues } from './document-fields.js'
 import type { RenderEngine } from '../contracts/engine.js'
@@ -32,7 +37,7 @@ import type { RenderEngine } from '../contracts/engine.js'
 @Injectable()
 export class OrchestratorService implements OnApplicationShutdown {
   private readonly logger = new Logger('Orchestrator')
-  private readonly engines: ReadonlyArray<RenderEngine>
+  private readonly engines: ReadonlyArray<{ name: EngineName; engine: RenderEngine }>
   private readonly maxConcurrent: number
   private readonly drainSeconds: number
   private renderCount = 0
@@ -48,30 +53,34 @@ export class OrchestratorService implements OnApplicationShutdown {
     config: ConfigService<Env, true>,
     // Page previews; optional so a bare orchestrator still renders
     @Optional() private readonly pagePreviews?: PagePreviewService,
+    @Optional() private readonly chromium?: ChromiumEngine,
   ) {
     // Registration order is dispatch priority
-    this.engines = [
-      this.typst,
-      this.pandoc,
+    const enabled = settings().engines
+    const all: Array<{ name: EngineName; engine: RenderEngine }> = [
+      { name: 'typst', engine: this.typst },
+      { name: 'pandoc', engine: this.pandoc },
       // a finished .docx read back to the final PDF or HTML; a fake Pandoc in a spec may not have it
-      ...(typeof this.pandoc.asDocxReader === 'function' ? [this.pandoc.asDocxReader()] : []),
-      this.quarto,
-      this.weasyprint,
-      this.mjml,
+      ...(typeof this.pandoc.asDocxReader === 'function' ? [{ name: 'pandoc' as const, engine: this.pandoc.asDocxReader() }] : []),
+      { name: 'quarto', engine: this.quarto },
+      { name: 'weasyprint', engine: this.weasyprint },
+      { name: 'mjml', engine: this.mjml },
+      ...(this.chromium ? [{ name: 'chromium' as const, engine: this.chromium }] : []),
     ]
+    this.engines = all.filter((e) => enabled.has(e.name))
     this.maxConcurrent = config.get('FABULA_MAX_CONCURRENT_RENDERS', {
       infer: true,
     })
-    this.drainSeconds = config.get('SHUTDOWN_DRAIN_SECONDS', { infer: true })
+    this.drainSeconds = config.get('FABULA_DRAIN_SECONDS', { infer: true })
     this.logger.log(
-      `dispatch ready — ${this.engines.length} engines, ` +
+      `dispatch ready — engines ${[...new Set(this.engines.map((e) => e.name))].join(', ')}, ` +
         `max concurrent ${this.maxConcurrent}, ` +
         `shutdown drain ${this.drainSeconds}s`,
     )
   }
 
   readonly registeredFormats = (): ReadonlyArray<RenderRequest['format']> =>
-    Array.from(new Set(this.engines.map((e) => e.format)))
+    Array.from(new Set(this.engines.map((e) => e.engine.format)))
 
   getRenderCount(): number {
     return this.renderCount
@@ -105,9 +114,9 @@ export class OrchestratorService implements OnApplicationShutdown {
   }
 
   private findEngine(req: RenderRequest): RenderEngine | undefined {
-    return this.engines.find(
-      (e) => e.format === req.format && e.outputs.includes(req.output),
-    )
+    const asked = req.engineConfig?.engine
+    const fits = this.engines.filter((e) => e.engine.format === req.format && e.engine.outputs.includes(req.output))
+    return (fits.find((e) => e.name === asked) ?? fits[0])?.engine
   }
 
   /** Throws when shutting down (503) or at capacity (429), before a slot is taken. */
@@ -165,7 +174,8 @@ export class OrchestratorService implements OnApplicationShutdown {
         fields: req.fields,
         values: values.values,
         output: req.output,
-        engineConfig: req.engineConfig ?? {},
+        // `engine` chose the engine; the engine's own settings are the rest
+        engineConfig: withoutEngine(req.engineConfig ?? {}),
       })
 
       if (result.ok && req.previews) {
@@ -224,4 +234,9 @@ export class OrchestratorService implements OnApplicationShutdown {
       this.inFlight -= 1
     }
   }
+}
+
+function withoutEngine(config: Record<string, unknown>): Record<string, unknown> {
+  const { engine: _chosen, ...rest } = config
+  return rest
 }
