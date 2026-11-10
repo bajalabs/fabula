@@ -8,12 +8,8 @@ export default defineConfig({
     include: ['test/**/*.spec.ts'],
     globals: false,
     environment: 'node',
-    pool: 'threads',
-    poolOptions: {
-      threads: {
-        // One file at a time: several specs spawn engines, swap process.env or use fake timers
-        singleThread: true,
-      },
-    },
+    // Each spec file in its own process (two at a time, `--maxWorkers=2` in the scripts): several specs swap
+    // process.env, spawn engines or use fake timers, and a process keeps that to itself
+    pool: 'forks',
   },
 })

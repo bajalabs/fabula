@@ -1,7 +1,13 @@
 # A single package; this file makes the folder its own pnpm root.
 packages:
   - "."
-# Install scripts allowed to run: esbuild (tsx) and SWC (the test transform) check their native binaries
+# Install scripts allowed to run: esbuild (Vite) and SWC (the test transform) check their native binaries
 onlyBuiltDependencies:
   - esbuild
   - "@swc/core"
+# Security fixes no parent ships yet; remove each once its parent's own range reaches the patched version
+overrides:
+  # mjml-cli 5.4.1 and js-beautify 2.0.3 (latest) pin glob ^13, which has no patched release; only their CLIs glob files
+  "glob@<14.0.2": "^14.0.4"
+  # mjml-cli 5.4.1 and editorconfig 3.0.2 (latest, under js-beautify) pin minimatch ^10, which has no patched release
+  "minimatch@<11.0.1": "^11.0.5"

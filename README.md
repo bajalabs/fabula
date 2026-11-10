@@ -44,7 +44,7 @@ node scripts/fabula.mjs render announcement@1 --out announcement.html
 | Outputs | PDF (tagged by default; PDF/UA-1 and PDF/A where the engine can), HTML, email HTML, `.docx`, `.pptx`, PNG, JPEG, and a PNG of every page of a PDF |
 | Example templates | 7, one or more per engine: `one-pager@1`, `checklist@1` (Typst), `memo@1` (Pandoc), `brief@1` (Quarto), `certificate@1` (WeasyPrint), `social-card@1` (Chromium), `announcement@1` (MJML) |
 | Field types | 11: `string`, `number`, `integer`, `money_cents`, `boolean`, `date`, `enum`, `array`, `object`, `sections`, `contact` |
-| Tests | 25 spec files, 294 tests (Vitest); 14 of them compile with Typst and the Chromium ones drive a real browser, so they run where those binaries are installed, as in CI |
+| Tests | 26 spec files, 300 tests (Vitest); 14 of them compile with Typst and the Chromium ones drive a real browser, so they run where those binaries are installed, as in CI |
 | Code | TypeScript on NestJS 11 and Fastify 5, Node 24, no database |
 
 ```
