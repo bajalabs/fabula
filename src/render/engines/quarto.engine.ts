@@ -104,23 +104,30 @@ export function composeSource(
   return '---\ntitle: " "\n---\n' + execGuard + typstPreamble + userSource
 }
 
-function parseErrors(stderr: string): CompileError[] {
+// eslint-disable-next-line no-control-regex -- the escape character is what this removes
+const ANSI = /\x1b\[[0-9;]*[A-Za-z]/g
+
+/**
+ * Quarto's stderr as compile errors. Quarto colours its lines (`\x1b[91mERROR: …`) and prints its settings first, so
+ * the colours go before the match, Typst's own `error: ` inside Quarto's `ERROR: ` goes, a repeated message is kept
+ * once, and with no ERROR or WARNING line the last lines (where the failure is) stand for the message.
+ */
+export function parseErrors(stderr: string): CompileError[] {
+  const text = stderr.replace(ANSI, '')
   const errors: CompileError[] = []
-  for (const line of stderr.split('\n')) {
-    const m = line.match(/^(?:ERROR|Error|WARNING|Warning):?\s*(.*)$/)
-    if (m && m[1].trim()) {
-      errors.push({
-        severity: /warning/i.test(line) ? 'warning' : 'error',
-        message: m[1].trim(),
-      })
-    }
+  const seen = new Set<string>()
+  for (const line of text.split('\n')) {
+    const m = line.match(/^(ERROR|WARN(?:ING)?):\s*(.*)$/i)
+    if (!m) continue
+    const severity = /^warn/i.test(m[1]) ? 'warning' : 'error'
+    const message = m[2].replace(/^(?:error|warning):\s*/i, '').trim()
+    if (!message || seen.has(`${severity}:${message}`)) continue
+    seen.add(`${severity}:${message}`)
+    errors.push({ severity, message })
   }
-  if (errors.length === 0 && stderr.trim()) {
-    errors.push({ severity: 'error', message: stderr.trim().slice(0, 1500) })
+  if (!errors.some((e) => e.severity === 'error') && text.trim()) {
+    errors.push({ severity: 'error', message: text.trim().split('\n').slice(-12).join('\n').slice(-1500) })
   }
-  // Quarto's own ERROR line is often a bare "producing PDF."; the lines before it say what failed
-  const tail = stderr.trim().split('\n').slice(-12).join('\n')
-  for (const e of errors) if (e.severity === 'error' && e.message.length < 40 && tail) e.message = `${e.message}\n${tail}`.slice(0, 1500)
   return errors
 }
 

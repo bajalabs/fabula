@@ -8,7 +8,7 @@
 import { describe, expect, it } from 'vitest'
 import { brandIdentitySchema } from '../src/contracts/index.js'
 import { BrandIdentityService } from '../src/render/brand/brand-identity.service.js'
-import { composeSource as quartoSource } from '../src/render/engines/quarto.engine.js'
+import { composeSource as quartoSource, parseErrors as parseQuartoErrors } from '../src/render/engines/quarto.engine.js'
 import { composeSource as typstSource } from '../src/render/engines/typst.engine.js'
 import { toTypstLiteral } from '../src/util/typst-literal.js'
 
@@ -50,5 +50,38 @@ describe('what Typst reads', () => {
   it('is the same value: only the spelling of { changes', () => {
     const { source } = typstSource('#title', [field('title') as never], { title: 'a {b} c' })
     expect(source.split('\n')[0]).toBe('#let title = "a \\u{7b}b} c"')
+  })
+})
+
+/* Quarto's errors (regression). Quarto colours its lines and prints its settings first; the parser matched `ERROR:`
+   only at a line's very start, so a coloured line never matched and the answer was the first 1500 characters of
+   stderr: the settings, not the failure. The stderr below is the shape Quarto 1.11.9 printed in the image. */
+describe('Quarto’s errors', () => {
+  const stderr = [
+    '\u001b[1mpandoc \u001b[22m',
+    '  to: typst',
+    '  output-file: main.typ',
+    '\u001b[1mmetadata\u001b[22m',
+    '  lang: en',
+    '[typst]: Compiling main.typ to main.pdf...error: unknown variable: font-body',
+    '    ┌─ main.typ:394:16',
+    '\u001b[91mERROR: error: unknown variable: font-body',
+    '    ┌─ main.typ:394:16',
+    '',
+    '\u001b[91mERROR: Typst compilation failed\u001b[39m',
+  ].join('\n')
+
+  it('answers the failure, without colours, once', () => {
+    expect(parseQuartoErrors(stderr)).toEqual([
+      { severity: 'error', message: 'unknown variable: font-body' },
+      { severity: 'error', message: 'Typst compilation failed' },
+    ])
+  })
+
+  it('answers the last lines when no line says ERROR', () => {
+    const out = parseQuartoErrors('\u001b[1mpandoc \u001b[22m\n  to: typst\nsomething broke at the end')
+    expect(out).toHaveLength(1)
+    expect(out[0].message).toContain('something broke at the end')
+    expect(out[0].message).not.toContain('\u001b')
   })
 })
