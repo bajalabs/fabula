@@ -1,7 +1,8 @@
 /* MjmlEngine: MJML to email-safe HTML, in process (no subprocess).
 
-     1. The brand's <mj-attributes> into <mj-head>, unless the template has its own.
-     2. {{ key }} substitution, HTML-escaped.
+     1. {{ key }} substitution, HTML-escaped.
+     2. The brand's <mj-attributes> into <mj-head>, unless the template has its own (after the values, so a brand
+        name is never read as a {{ key }}).
      3. mjml2html(). */
 
 import { Injectable } from '@nestjs/common'
@@ -14,7 +15,7 @@ import type {
   RenderFormat,
 } from '../../contracts/index.js'
 import { BrandIdentityService } from '../brand/brand-identity.service.js'
-import { substitute } from '../../util/mustache.js'
+import { substitute, TemplateValueError } from '../../util/mustache.js'
 import type {
   EngineRenderRequest,
   EngineRenderResult,
@@ -56,7 +57,7 @@ function composeSource(
   values: Record<string, unknown>,
   fields: EngineRenderRequest['fields'],
 ): string {
-  const resolved: Record<string, unknown> = {}
+  const resolved: Record<string, unknown> = Object.create(null)
   for (const f of fields) {
     resolved[f.key] =
       Object.prototype.hasOwnProperty.call(values, f.key)
@@ -65,8 +66,7 @@ function composeSource(
   }
   for (const [k, v] of Object.entries(values)) resolved[k] = v
 
-  const withBrand = injectBrandAttributes(userSource, mjAttrs)
-  return substitute(withBrand, resolved, 'html')
+  return injectBrandAttributes(substitute(userSource, resolved, 'html'), mjAttrs)
 }
 
 @Injectable()
@@ -130,6 +130,7 @@ export class MjmlEngine implements RenderEngine {
         ...(warnings.length ? { warnings } : {}),
       }
     } catch (err) {
+      if (err instanceof TemplateValueError) return { ok: false, errors: [{ severity: 'error', message: err.message, file: 'fields' }] }
       return {
         ok: false,
         errors: [

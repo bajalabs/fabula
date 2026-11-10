@@ -23,7 +23,7 @@ import {
   BrandAssetsService,
   PRINT_HTML_ASSET_FORMATS,
 } from '../brand/brand-assets.service.js'
-import { substitute } from '../../util/mustache.js'
+import { substitute, TemplateValueError } from '../../util/mustache.js'
 import type {
   EngineRenderRequest,
   EngineRenderResult,
@@ -40,7 +40,7 @@ function composeSource(
 ): string {
   // Default-resolve values from field defaults so {{ key }} substitutions
   // with no user value still render meaningfully.
-  const resolved: Record<string, unknown> = {}
+  const resolved: Record<string, unknown> = Object.create(null)
   for (const f of fields) {
     resolved[f.key] =
       Object.prototype.hasOwnProperty.call(values, f.key)
@@ -133,7 +133,13 @@ export class WeasyPrintEngine implements RenderEngine {
       const placed = await this.brandAssets.place(req.brand, workDir, PRINT_HTML_ASSET_FORMATS)
       if (!placed.ok) return placed
       const brandCss = this.brandIdentity.buildHtml(req.brand, placed.assets)
-      const composed = composeSource(req.source, brandCss, req.values, req.fields)
+      let composed: string
+      try {
+        composed = composeSource(req.source, brandCss, req.values, req.fields)
+      } catch (err) {
+        if (err instanceof TemplateValueError) return { ok: false, errors: [{ severity: 'error', message: err.message, file: 'fields' }] }
+        throw err
+      }
       await writeFile(htmlPath, composed, 'utf-8')
 
       const args = [

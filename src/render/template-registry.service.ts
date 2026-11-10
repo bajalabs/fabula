@@ -26,6 +26,7 @@ import {
 
 import { brandPrimaryLogoMode } from './brand/brand-identity.service.js'
 import { fieldSchema, parseRequestValues, parseTemplateValues, type FieldIssue } from './document-fields.js'
+import { tokenKeys } from '../util/mustache.js'
 
 export interface LoadedTemplate {
   id: string
@@ -95,6 +96,12 @@ export function loadTemplates(root: string): Map<string, LoadedTemplate> {
           if (!fieldSchema(field)) throw new Error(`${where}: field ${field.key} (${field.fieldTypeKey}) has no schema`)
         }
         const source = readFileSync(entry, 'utf-8')
+        if (manifest.format === 'html' || manifest.format === 'mjml') {
+          // A {{ key }} the template does not declare would be filled by a value whose type nothing checked
+          const declared = new Set(manifest.fields.map((f) => f.key))
+          const undeclared = [...tokenKeys(source)].filter((k) => !declared.has(k))
+          if (undeclared.length) throw new Error(`${where}: {{ ${undeclared.join(' }}, {{ ')} }} is not a declared field`)
+        }
         if (out.has(id)) throw new Error(`${where}: ${id} is defined twice`)
         out.set(id, { id, manifest, source })
       }
