@@ -1,0 +1,9 @@
+dist/
+node_modules/
+coverage/
+.env
+.env.*
+!.env.example
+.typst-packages/
+*.log
+.DS_Store

@@ -1,0 +1,121 @@
+{
+  "name": "checklist",
+  "kind": "document",
+  "version": 1,
+  "title": "Checklist with sections",
+  "description": "A branded checklist: a title and subtitle beside the logo, typed sections (checks that hang beside their box, text, points, cards with or without a picture, steps, facts, a row of two columns) and a contact band. A long list runs onto a second page. PDF/UA-1.",
+  "format": "typst",
+  "output": "pdf",
+  "entry": "main.typ",
+  "fields": [
+    {
+      "key": "title",
+      "label": "Title",
+      "fieldTypeKey": "string",
+      "isRequired": true,
+      "defaultValue": "Checklist",
+      "sortOrder": 1
+    },
+    {
+      "key": "subtitle",
+      "label": "Subtitle",
+      "fieldTypeKey": "string",
+      "defaultValue": "",
+      "sortOrder": 2
+    },
+    {
+      "key": "sections",
+      "label": "Sections",
+      "fieldTypeKey": "sections",
+      "defaultValue": [],
+      "sortOrder": 3
+    },
+    {
+      "key": "contact",
+      "label": "Contact band (title, line, cta_label, cta_url)",
+      "fieldTypeKey": "contact",
+      "defaultValue": null,
+      "sortOrder": 4
+    },
+    {
+      "key": "web",
+      "label": "Footer, right (site or email)",
+      "fieldTypeKey": "string",
+      "defaultValue": "",
+      "sortOrder": 5
+    },
+    {
+      "key": "lang",
+      "label": "Language (two letters)",
+      "fieldTypeKey": "string",
+      "defaultValue": "en",
+      "sortOrder": 6
+    }
+  ],
+  "engineConfig": {
+    "pdf": {
+      "standards": [
+        "ua-1"
+      ]
+    }
+  },
+  "headLogo": "page",
+  "sample": {
+    "title": "Before you publish",
+    "subtitle": "A review of one piece of content",
+    "sections": [
+      {
+        "kind": "checks",
+        "title": "The piece",
+        "boxed": true,
+        "columns": 2,
+        "items": [
+          "The logo is the current one",
+          "The colours are the brand's",
+          "The legal notice is at the foot",
+          "The link opens the right page"
+        ],
+        "note": "Tick every box before you approve the piece."
+      },
+      {
+        "kind": "checks",
+        "title": "The text",
+        "items": [
+          {
+            "title": "Facts.",
+            "body": "Every figure and every claim comes from a source that can be named, and whoever reviews the piece can find it without asking anyone."
+          },
+          {
+            "title": "Tone.",
+            "body": "It reads like the brand."
+          }
+        ]
+      },
+      {
+        "kind": "cards",
+        "title": "Who reviews",
+        "columns": 3,
+        "items": [
+          {
+            "title": "Design",
+            "body": "The image and the layout."
+          },
+          {
+            "title": "Content",
+            "body": "The text and the figures."
+          },
+          {
+            "title": "Legal",
+            "body": "The notices."
+          }
+        ]
+      }
+    ],
+    "contact": {
+      "title": "Questions?",
+      "line": "hello@example.com"
+    },
+    "web": "example.com",
+    "lang": "en"
+  }
+}

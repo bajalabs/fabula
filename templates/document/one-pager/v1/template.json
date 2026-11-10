@@ -1,0 +1,167 @@
+{
+  "name": "one-pager",
+  "kind": "document",
+  "version": 1,
+  "title": "One-pager with sections",
+  "description": "A branded page that fills one A4: a title band, an introduction, typed sections (text, points, cards with or without a picture, steps, facts, checks, a row of two columns) and a contact band. Content that does not fit is refused. PDF/UA-1.",
+  "format": "typst",
+  "output": "pdf",
+  "entry": "main.typ",
+  "fields": [
+    {
+      "key": "title",
+      "label": "Title",
+      "fieldTypeKey": "string",
+      "isRequired": true,
+      "defaultValue": "",
+      "sortOrder": 1
+    },
+    {
+      "key": "tagline",
+      "label": "Tagline, above the title",
+      "fieldTypeKey": "string",
+      "defaultValue": "",
+      "sortOrder": 2
+    },
+    {
+      "key": "intro",
+      "label": "Introduction",
+      "fieldTypeKey": "string",
+      "defaultValue": "",
+      "sortOrder": 3
+    },
+    {
+      "key": "sections",
+      "label": "Sections",
+      "fieldTypeKey": "sections",
+      "defaultValue": [],
+      "sortOrder": 4
+    },
+    {
+      "key": "contact",
+      "label": "Contact band (title, line, cta_label, cta_url)",
+      "fieldTypeKey": "contact",
+      "defaultValue": null,
+      "sortOrder": 5
+    },
+    {
+      "key": "web",
+      "label": "Footer, right (site or email)",
+      "fieldTypeKey": "string",
+      "defaultValue": "",
+      "sortOrder": 6
+    },
+    {
+      "key": "lang",
+      "label": "Language (two letters)",
+      "fieldTypeKey": "string",
+      "defaultValue": "en",
+      "sortOrder": 7
+    }
+  ],
+  "engineConfig": {
+    "pdf": {
+      "standards": [
+        "ua-1"
+      ]
+    }
+  },
+  "headLogo": "band",
+  "sample": {
+    "title": "Field notes for a small bakery",
+    "tagline": "Bread, by the numbers",
+    "intro": "How a neighbourhood bakery plans its week: what it bakes, how it measures waste, and what it changed after a season of records.",
+    "sections": [
+      {
+        "kind": "cards",
+        "title": "What we bake",
+        "columns": 3,
+        "closing": "One oven, three shifts.",
+        "items": [
+          {
+            "title": "Sourdough",
+            "body": "A 36-hour dough, baked every morning."
+          },
+          {
+            "title": "Rye",
+            "body": "Dense loaves for the weekend market."
+          },
+          {
+            "title": "Buns",
+            "body": "Sweet and savoury, baked twice a day."
+          }
+        ]
+      },
+      {
+        "kind": "steps",
+        "title": "How the week runs",
+        "columns": 3,
+        "items": [
+          {
+            "title": "Count",
+            "body": "Every unsold loaf is counted at closing."
+          },
+          {
+            "title": "Plan",
+            "body": "Tomorrow's batch follows the last four weeks."
+          },
+          {
+            "title": "Adjust",
+            "body": "Market days get their own plan."
+          }
+        ]
+      },
+      {
+        "kind": "row",
+        "left": [
+          {
+            "kind": "points",
+            "title": "What changed",
+            "columns": 1,
+            "items": [
+              {
+                "title": "Smaller batches",
+                "body": "Two bakes a day instead of one large one."
+              },
+              {
+                "title": "A waste log",
+                "body": "Leftovers are written down, not guessed."
+              }
+            ]
+          }
+        ],
+        "right": [
+          {
+            "kind": "facts",
+            "title": "In short",
+            "items": [
+              {
+                "label": "Loaves a day",
+                "value": "About 240"
+              },
+              {
+                "label": "Waste",
+                "value": "Down from 12 % to 5 %"
+              }
+            ],
+            "note": "Sample figures."
+          }
+        ]
+      },
+      {
+        "kind": "text",
+        "style": "box",
+        "title": "Note",
+        "body": "This is a sample document rendered from the template's own sample data."
+      }
+    ],
+    "contact": {
+      "title": "Visit us",
+      "line": "hello@example.com",
+      "cta_label": "See the menu",
+      "cta_url": "https://example.com/menu"
+    },
+    "web": "example.com",
+    "lang": "en"
+  }
+}

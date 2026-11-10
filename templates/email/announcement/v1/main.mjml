@@ -1,0 +1,16 @@
+<mjml>
+  <mj-head>
+    <mj-title>{{ heading }}</mj-title>
+    <mj-preview>{{ preview }}</mj-preview>
+  </mj-head>
+  <mj-body background-color="#F7F8FA">
+    <mj-section background-color="#FFFFFF" padding="24px">
+      <mj-column>
+        <mj-text mj-class="heading">{{ heading }}</mj-text>
+        <mj-text>{{ body }}</mj-text>
+        <mj-button href="{{ cta_url }}">{{ cta_label }}</mj-button>
+        <mj-text mj-class="dim">{{ footer }}</mj-text>
+      </mj-column>
+    </mj-section>
+  </mj-body>
+</mjml>

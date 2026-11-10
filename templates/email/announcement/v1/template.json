@@ -1,0 +1,64 @@
+{
+  "name": "announcement",
+  "kind": "email",
+  "version": 1,
+  "title": "Announcement email",
+  "description": "A branded announcement email: heading, body, one button, a footer line. MJML to HTML; values are HTML-escaped.",
+  "format": "mjml",
+  "output": "html",
+  "entry": "main.mjml",
+  "fields": [
+    {
+      "key": "heading",
+      "label": "Heading",
+      "fieldTypeKey": "string",
+      "isRequired": true,
+      "defaultValue": "",
+      "sortOrder": 1
+    },
+    {
+      "key": "preview",
+      "label": "Inbox preview text",
+      "fieldTypeKey": "string",
+      "defaultValue": "",
+      "sortOrder": 2
+    },
+    {
+      "key": "body",
+      "label": "Body",
+      "fieldTypeKey": "string",
+      "isRequired": true,
+      "defaultValue": "",
+      "sortOrder": 3
+    },
+    {
+      "key": "cta_label",
+      "label": "Button",
+      "fieldTypeKey": "string",
+      "defaultValue": "Read more",
+      "sortOrder": 4
+    },
+    {
+      "key": "cta_url",
+      "label": "Button link (https)",
+      "fieldTypeKey": "string",
+      "defaultValue": "",
+      "sortOrder": 5
+    },
+    {
+      "key": "footer",
+      "label": "Footer line",
+      "fieldTypeKey": "string",
+      "defaultValue": "",
+      "sortOrder": 6
+    }
+  ],
+  "sample": {
+    "heading": "The spring menu is here",
+    "preview": "Six new loaves, from Monday",
+    "body": "From Monday the bakery adds six seasonal loaves to the counter, each baked twice a day.",
+    "cta_label": "See the menu",
+    "cta_url": "https://example.com/menu",
+    "footer": "You receive this email because you subscribed to the bakery's news. You can unsubscribe at any time."
+  }
+}
