@@ -247,7 +247,7 @@ describe("the document templates' sources", () => {
     for (const src of [one, check]) {
       expect(src).not.toMatch(/sym\.(zws|zwj|zwnj|shy|wj)\b/)
       expect(src).not.toMatch(/\\u\{(200b|200c|200d|2060|feff|ad)\}/i)
-      expect(src).not.toMatch(/[\u200b\u200c\u200d\u2060\ufeff\u00ad]/)
+      expect(src).not.toMatch(/\u200b|\u200c|\u200d|\u2060|\ufeff|\u00ad/)
     }
   })
 

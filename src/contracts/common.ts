@@ -85,6 +85,7 @@ export const brandColorSchema = z.object({
 
 export const brandFontSchema = z.object({
   role: brandFontRoleSchema,
+  // eslint-disable-next-line no-control-regex -- control characters are what this refuses
   family: z.string().trim().min(1).max(128).regex(/^[^\u0000-\u001F\u007F]+$/, 'family has control characters'),
   weight: z.number().int().min(100).max(900).default(400),
   style: z.enum(['normal', 'italic']).default('normal'),

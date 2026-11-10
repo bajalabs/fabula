@@ -268,7 +268,7 @@ describe('engines × brand record', () => {
       expect(call.read('_brand.yml')).toContain(`path: _shared/fonts/${sha(TTF)}.ttf`)
       const yml = call.read('_quarto.yml')
       expect(yml).toContain(`  typst:\n    keep-typ: false\n    font-paths:\n      - ${JSON.stringify(fontDir)}\n`)
-      expect(yml.match(/^  typst:$/gm)).toHaveLength(1)
+      expect(yml.match(/^ {2}typst:$/gm)).toHaveLength(1)
       expect(call.env?.TYPST_FONT_PATHS).toBe(fontDir)
     })
 

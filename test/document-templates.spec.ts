@@ -151,7 +151,7 @@ describe.skipIf(!hasTypst && !process.env.CI)('one-pager@1 and checklist@1, comp
     for (const id of ['one-pager@1', 'checklist@1']) {
       const out = await pdf(id, { title: 'x', web: 'example.com', sections: [{ kind: 'text', body: `Write to ${address} today.` }] })
       const text = spawnSync('pdftotext', ['-', '-'], { input: Buffer.from(out), encoding: 'utf8' }).stdout
-      expect(text).not.toMatch(/[\u200b\u200c\u200d\u2060\ufeff\u00ad]/)
+      expect(text).not.toMatch(/\u200b|\u200c|\u200d|\u2060|\ufeff|\u00ad/)
       expect(text.replace(/\s+/g, '')).toContain(address)
     }
   })

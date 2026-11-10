@@ -16,8 +16,9 @@
   "packageManager": "pnpm@10.26.0",
   "scripts": {
     "build": "tsc -p tsconfig.build.json",
-    "dev": "tsx watch src/main.ts",
-    "start": "node dist/main.js",
+    "dev": "tsc -p tsconfig.build.json && (tsc -p tsconfig.build.json --watch --preserveWatchOutput & node --env-file-if-exists=.env --watch-path=dist dist/main.js)",
+    "start": "node --env-file-if-exists=.env dist/main.js",
+    "lint": "eslint .",
     "type-check": "tsc --noEmit -p tsconfig.json",
     "test": "vitest run --maxWorkers=2",
     "test:watch": "vitest --maxWorkers=2"
@@ -40,11 +41,14 @@
     "zod": "^4.3.6"
   },
   "devDependencies": {
+    "@eslint/js": "^10.0.1",
     "@swc/core": "^1.16.22",
     "@types/node": "^22.10.2",
+    "eslint": "^10.14.0",
+    "globals": "^17.14.0",
     "pino-pretty": "^11.3.0",
-    "tsx": "^4.19.2",
     "typescript": "^5.7.2",
+    "typescript-eslint": "^8.72.2",
     "unplugin-swc": "^2.0.0",
     "vitest": "^2.1.8"
   }

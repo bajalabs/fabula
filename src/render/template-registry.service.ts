@@ -81,7 +81,7 @@ export function loadTemplates(root: string): Map<string, LoadedTemplate> {
         try {
           raw = JSON.parse(readFileSync(file, 'utf-8'))
         } catch (e) {
-          throw new Error(`${where}/template.json is not JSON: ${e instanceof Error ? e.message : e}`)
+          throw new Error(`${where}/template.json is not JSON: ${e instanceof Error ? e.message : e}`, { cause: e })
         }
         const parsed = templateManifestSchema.safeParse(raw)
         if (!parsed.success) {

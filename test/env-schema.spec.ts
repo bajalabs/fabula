@@ -113,4 +113,16 @@ describe('envSchema, the rest of the configuration', () => {
       resetSettings()
     }
   })
+
+  it('takes an empty variable as unset', async () => {
+    const { validateEnv } = await import('../src/config/env.js')
+    const { resetSettings } = await import('../src/config/settings.js')
+    try {
+      const env = validateEnv({ FABULA_HMAC_KEYS: keys, FABULA_TOKENS: '', FABULA_CALLBACK_KEY: '', FABULA_ENGINES: '' })
+      expect(env.FABULA_CALLBACK_KEY).toBeUndefined()
+      expect(env.FABULA_ENGINES).toHaveLength(6)
+    } finally {
+      resetSettings()
+    }
+  })
 })

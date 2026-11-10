@@ -48,6 +48,7 @@ import type {
  *  quotes: a font name keeps everything but quotes, backslashes and
  *  control characters. */
 function plainFontName(s: string): string {
+  // eslint-disable-next-line no-control-regex -- control characters are what this removes
   return s.replace(/["\\\u0000-\u001F\u007F]/g, '').trim()
 }
 

@@ -188,6 +188,7 @@ function hasBrandRecord(brand: BrandIdentity): boolean {
  *  <style> element, so `</style>` must not survive). */
 export function cssString(s: string): string {
   const body = s
+    // eslint-disable-next-line no-control-regex -- control characters are what this removes
     .replace(/[\u0000-\u0008\u000B\u000E-\u001F\u007F]/g, '')
     .replace(/\\/g, '\\\\')
     .replace(/"/g, '\\"')

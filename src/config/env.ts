@@ -111,7 +111,8 @@ export const envSchema = z
 export type Env = z.infer<typeof envSchema>
 
 export function validateEnv(raw: Record<string, unknown>): Env {
-  const parsed = envSchema.safeParse(raw)
+  // An empty variable is an unset one: compose and .env files pass optional variables through as ''
+  const parsed = envSchema.safeParse(Object.fromEntries(Object.entries(raw).filter(([, v]) => v !== '')))
   if (!parsed.success) {
     const formatted = parsed.error.issues.map((i) => `  • ${i.path.join('.') || '(root)'}: ${i.message}`).join('\n')
     throw new Error(`Invalid environment configuration:\n${formatted}\n\nFabula refuses to start with a missing or malformed variable.`)
