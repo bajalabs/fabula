@@ -243,6 +243,14 @@ describe("the document templates' sources", () => {
   const check = source('document/checklist/v1/main.typ')
   const shapes = (s: string) => s.slice(s.indexOf('// ── The section shapes'), s.indexOf('// ── End of the section shapes'))
 
+  it('add no invisible character to the text: a copied address must read as it was written', () => {
+    for (const src of [one, check]) {
+      expect(src).not.toMatch(/sym\.(zws|zwj|zwnj|shy|wj)\b/)
+      expect(src).not.toMatch(/\\u\{(200b|200c|200d|2060|feff|ad)\}/i)
+      expect(src).not.toMatch(/[\u200b\u200c\u200d\u2060\ufeff\u00ad]/)
+    }
+  })
+
   it('carry the same section shapes: a template version stands alone, so the block is copied and held together here', () => {
     expect(shapes(one).length).toBeGreaterThan(1000)
     expect(shapes(one)).toBe(shapes(check))

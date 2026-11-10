@@ -12,8 +12,9 @@
   set text(font: font-body, size: 9.6pt, lang: lang, fill: brand-ink)
   set par(leading: 0.55em)
   show heading: set text(font: font-heading, fill: brand-heading)
-  // A word with no place to break would run off the page: past 30 characters it may break anywhere
-  show regex("\\S{30}"): it => [#it#sym.zws]
+  // A word with no place to break would run off the page: every 30 characters of it go in a box, and a line may
+  // break between two boxes. No character is added, so a copied address or link stays as it was
+  show regex("\\S{30}"): it => box(it)
   show heading.where(level: 1): set text(size: 21pt, weight: "bold")
   show heading.where(level: 2): set text(size: 12.5pt, weight: "bold")
   show heading.where(level: 3): set text(size: 10pt, weight: "bold")

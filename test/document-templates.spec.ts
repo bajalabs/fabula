@@ -144,6 +144,18 @@ describe.skipIf(!hasTypst && !process.env.CI)('one-pager@1 and checklist@1, comp
     }
   })
 
+  it('breaks a long address without adding a character to it: a copy reads as it was written', async () => {
+    const address = `https://example.com/${'a-very-long-path-segment/'.repeat(8)}end?q=${'x'.repeat(60)}`
+    const r = spawnSync('pdftotext', ['-v'])
+    if (r.error && !process.env.CI) return // Poppler absent here; CI installs it
+    for (const id of ['one-pager@1', 'checklist@1']) {
+      const out = await pdf(id, { title: 'x', web: 'example.com', sections: [{ kind: 'text', body: `Write to ${address} today.` }] })
+      const text = spawnSync('pdftotext', ['-', '-'], { input: Buffer.from(out), encoding: 'utf8' }).stdout
+      expect(text).not.toMatch(/[\u200b\u200c\u200d\u2060\ufeff\u00ad]/)
+      expect(text.replace(/\s+/g, '')).toContain(address)
+    }
+  })
+
   it('takes sections: null as no sections', async () => {
     const r = registry.resolve(renderInputSchema.parse({ template: 'checklist@1', brand: BRAND, values: { title: 'x', sections: null } }))
     if (!r.ok) throw new Error('resolve')
