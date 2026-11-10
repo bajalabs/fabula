@@ -1,0 +1,61 @@
+{
+  "name": "brief",
+  "kind": "report",
+  "version": 1,
+  "title": "Brief",
+  "description": "A short Quarto report rendered through Quarto's Typst format to PDF: a title, a period, a summary and a table of figures, then the template's own Markdown. Code cells are never run.",
+  "format": "quarto",
+  "output": "pdf",
+  "entry": "main.qmd",
+  "fields": [
+    {
+      "key": "title",
+      "label": "Title",
+      "fieldTypeKey": "string",
+      "isRequired": true,
+      "defaultValue": "Brief",
+      "sortOrder": 1
+    },
+    {
+      "key": "period",
+      "label": "Period",
+      "fieldTypeKey": "string",
+      "defaultValue": "",
+      "sortOrder": 2
+    },
+    {
+      "key": "summary",
+      "label": "Summary",
+      "fieldTypeKey": "string",
+      "maxLength": 2000,
+      "defaultValue": "",
+      "sortOrder": 3
+    },
+    {
+      "key": "figures",
+      "label": "Figures (label, value)",
+      "fieldTypeKey": "array",
+      "defaultValue": [],
+      "sortOrder": 4
+    }
+  ],
+  "sample": {
+    "title": "Monthly brief",
+    "period": "September 2026",
+    "summary": "Sales held steady while costs fell, mostly from smaller batches and less waste at closing.",
+    "figures": [
+      {
+        "label": "Loaves sold",
+        "value": "7,180"
+      },
+      {
+        "label": "Waste",
+        "value": "5 %"
+      },
+      {
+        "label": "New customers",
+        "value": "112"
+      }
+    ]
+  }
+}

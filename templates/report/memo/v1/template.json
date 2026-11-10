@@ -1,0 +1,60 @@
+{
+  "name": "memo",
+  "kind": "report",
+  "version": 1,
+  "title": "Memo",
+  "description": "A one- or two-page memo in Markdown, rendered by Pandoc through Typst to PDF: a title block, a summary, a list of highlights, and the template's own Markdown. The values reach the PDF through raw Typst (`#summary`); Markdown carries the rest.",
+  "format": "markdown",
+  "output": "pdf",
+  "entry": "main.md",
+  "fields": [
+    {
+      "key": "title",
+      "label": "Title",
+      "fieldTypeKey": "string",
+      "isRequired": true,
+      "defaultValue": "Memo",
+      "sortOrder": 1
+    },
+    {
+      "key": "author",
+      "label": "From",
+      "fieldTypeKey": "string",
+      "defaultValue": "",
+      "sortOrder": 2
+    },
+    {
+      "key": "date",
+      "label": "Date, as written",
+      "fieldTypeKey": "string",
+      "defaultValue": "",
+      "sortOrder": 3
+    },
+    {
+      "key": "summary",
+      "label": "Summary",
+      "fieldTypeKey": "string",
+      "maxLength": 2000,
+      "defaultValue": "",
+      "sortOrder": 4
+    },
+    {
+      "key": "highlights",
+      "label": "Highlights, one line each",
+      "fieldTypeKey": "array",
+      "defaultValue": [],
+      "sortOrder": 5
+    }
+  ],
+  "sample": {
+    "title": "Quarterly kitchen review",
+    "author": "Operations",
+    "date": "1 October 2026",
+    "summary": "Waste fell for the third quarter running, and the new morning bake covers the early rush without a second oven.",
+    "highlights": [
+      "Waste down from 12 % to 5 % of the daily bake",
+      "Two bakes a day instead of one",
+      "A written waste log at every closing"
+    ]
+  }
+}

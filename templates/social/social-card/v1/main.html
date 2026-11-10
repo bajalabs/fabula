@@ -1,0 +1,30 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Social card</title>
+<style>
+  html, body { margin: 0; width: 1200px; height: 630px; }
+  body { font-family: var(--font-body); background: var(--brand-primary); color: #FFFFFF; display: flex; }
+  .card { box-sizing: border-box; width: 1200px; height: 630px; padding: 72px 80px; display: flex; flex-direction: column; justify-content: space-between; }
+  .tag { align-self: flex-start; background: var(--brand-accent); color: #FFFFFF; border-radius: 999px; padding: 8px 22px; font-size: 26px; font-weight: 700; letter-spacing: 0.04em; }
+  h1 { font-family: var(--font-heading); color: #FFFFFF; font-size: 72px; line-height: 1.08; margin: 0 0 16px; max-width: 1000px; }
+  p { font-size: 32px; margin: 0; opacity: 0.9; }
+  .foot { display: flex; justify-content: space-between; align-items: flex-end; font-size: 26px; }
+  .brand-logo { height: 64px; }
+</style>
+</head>
+<body>
+  <div class="card">
+    <span class="tag">{{ tag }}</span>
+    <div>
+      <h1>{{ title }}</h1>
+      <p>{{ subtitle }}</p>
+    </div>
+    <div class="foot">
+      <span>{{ site }}</span>
+      <span class="brand-logo"></span>
+    </div>
+  </div>
+</body>
+</html>

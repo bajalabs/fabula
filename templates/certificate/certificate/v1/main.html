@@ -1,0 +1,33 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Certificate</title>
+<style>
+  @page { size: A4 landscape; margin: 14mm; @bottom-left { content: none; } @bottom-right { content: none; } }
+  body { margin: 0; font-family: var(--font-body); color: var(--brand-text); }
+  .frame { border: 2.5mm solid var(--brand-primary); padding: 16mm 20mm; height: 150mm; text-align: center; }
+  .kicker { letter-spacing: 0.3em; text-transform: uppercase; color: var(--brand-dim); font-size: 10pt; margin: 0; }
+  h1 { font-family: var(--font-heading); color: var(--brand-primary); font-size: 34pt; margin: 6mm 0 2mm; }
+  .name { font-family: var(--font-heading); font-size: 26pt; margin: 10mm 0 4mm; border-bottom: 0.4mm solid var(--brand-border); display: inline-block; padding: 0 12mm 2mm; }
+  .for { font-size: 13pt; margin: 4mm 0; }
+  .course { font-weight: 700; font-size: 15pt; }
+  .foot { display: flex; justify-content: space-between; margin-top: 18mm; font-size: 10pt; color: var(--brand-steel); }
+  .foot div { width: 70mm; border-top: 0.3mm solid var(--brand-border); padding-top: 2mm; }
+</style>
+</head>
+<body>
+  <div class="frame">
+    <p class="kicker">Certificate of completion</p>
+    <h1>{{ title }}</h1>
+    <p class="for">This certifies that</p>
+    <p class="name">{{ name }}</p>
+    <p class="for">completed</p>
+    <p class="course">{{ course }}</p>
+    <div class="foot">
+      <div>{{ date }}</div>
+      <div>{{ signer }}</div>
+    </div>
+  </div>
+</body>
+</html>

@@ -1,0 +1,56 @@
+{
+  "name": "certificate",
+  "kind": "certificate",
+  "version": 1,
+  "title": "Certificate",
+  "description": "A landscape certificate in HTML and CSS paged media, rendered by WeasyPrint to PDF. Every {{ key }} is a declared field and is HTML-escaped.",
+  "format": "html",
+  "output": "pdf",
+  "entry": "main.html",
+  "fields": [
+    {
+      "key": "title",
+      "label": "Title",
+      "fieldTypeKey": "string",
+      "defaultValue": "Certificate",
+      "sortOrder": 1
+    },
+    {
+      "key": "name",
+      "label": "Recipient",
+      "fieldTypeKey": "string",
+      "isRequired": true,
+      "defaultValue": "",
+      "sortOrder": 2
+    },
+    {
+      "key": "course",
+      "label": "Course or achievement",
+      "fieldTypeKey": "string",
+      "isRequired": true,
+      "defaultValue": "",
+      "sortOrder": 3
+    },
+    {
+      "key": "date",
+      "label": "Date, as written",
+      "fieldTypeKey": "string",
+      "defaultValue": "",
+      "sortOrder": 4
+    },
+    {
+      "key": "signer",
+      "label": "Signed by",
+      "fieldTypeKey": "string",
+      "defaultValue": "",
+      "sortOrder": 5
+    }
+  ],
+  "sample": {
+    "title": "Bread basics",
+    "name": "Alex Example",
+    "course": "Sourdough, from starter to loaf (12 hours)",
+    "date": "1 October 2026",
+    "signer": "Head baker"
+  }
+}

@@ -19,10 +19,21 @@ describe('the repository’s templates', () => {
   const registry = new TemplateRegistryService()
 
   it('loads every template, sorted by name', () => {
-    expect(registry.list().map((t) => t.id)).toEqual(['announcement@1', 'checklist@1', 'one-pager@1'])
+    expect(registry.list().map((t) => t.id)).toEqual(['announcement@1', 'brief@1', 'certificate@1', 'checklist@1', 'memo@1', 'one-pager@1', 'social-card@1'])
     const checklist = registry.list().find((t) => t.id === 'checklist@1')!
     expect(checklist).toMatchObject({ kind: 'document', format: 'typst', output: 'pdf' })
     expect(checklist.fields.map((f) => f.key)).toEqual(['title', 'subtitle', 'sections', 'contact', 'web', 'lang'])
+  })
+
+  it('has an example for every engine, each with a sample that fits its own fields', () => {
+    const route = (t: { format: string; output: string }) =>
+      ({ typst: 'typst', markdown: 'pandoc', quarto: 'quarto', mjml: 'mjml' })[t.format] ?? (t.output === 'pdf' ? 'weasyprint' : 'chromium')
+    expect([...new Set(registry.list().map(route))].sort()).toEqual(['chromium', 'mjml', 'pandoc', 'quarto', 'typst', 'weasyprint'])
+    for (const t of registry.list()) {
+      const r = registry.resolve(renderInputSchema.parse({ template: t.id, values: t.sample }))
+      expect(r.ok, t.id).toBe(true)
+      expect(Object.keys(t.sample).every((k) => t.fields.some((f) => f.key === k)), t.id).toBe(true)
+    }
   })
 
   it('selects a version only by its exact name: there is no latest', () => {

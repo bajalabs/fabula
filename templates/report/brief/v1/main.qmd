@@ -1,0 +1,37 @@
+---
+format:
+  typst:
+    papersize: a4
+    margin:
+      x: 2cm
+      y: 2cm
+lang: en
+---
+
+```{=typst}
+#set text(font: font-body, size: 10.5pt)
+#text(font: font-heading, size: 22pt, weight: "bold", fill: brand-primary, title)
+#v(2pt)
+#text(fill: brand-dim, period)
+#v(10pt)
+#summary
+#v(10pt)
+#table(
+  columns: (1fr, auto),
+  stroke: (x, y) => if y == 0 { (bottom: 0.8pt + brand-primary) } else { (bottom: 0.4pt + brand-border) },
+  inset: (x: 4pt, y: 6pt),
+  table.header([*Measure*], [*Value*]),
+  ..figures.map(f => (f.label, f.value)).flatten(),
+)
+```
+
+## Notes
+
+This brief is a Quarto document: Markdown with front matter, rendered through
+Quarto's Typst format. Code cells are never run.
+
+{{< pagebreak >}}
+
+## Appendix
+
+The figures above are sample data.
