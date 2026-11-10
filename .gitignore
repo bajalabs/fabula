@@ -7,3 +7,7 @@ coverage/
 .typst-packages/
 *.log
 .DS_Store
+
+# Python bytecode
+__pycache__/
+*.pyc
