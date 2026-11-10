@@ -36,6 +36,19 @@ describe('the repository’s templates', () => {
     }
   })
 
+  it('imports _shared/brand.typ in every Markdown or Quarto template that uses a brand name in its Typst', () => {
+    // A Typst template imports it at its top; Pandoc's and Quarto's raw Typst must import it too, or the PDF fails
+    // with "unknown variable" (found by the image's smoke test, which renders every sample)
+    const brandName = /#[^\n]*\b(?:brand-[a-z-]+|font-(?:body|heading|mono)|company)\b/
+    const markdown = registry.list().filter((t) => t.format === 'markdown' || t.format === 'quarto')
+    expect(markdown.map((t) => t.id).sort()).toEqual(['brief@1', 'memo@1'])
+    for (const t of markdown) {
+      const r = registry.resolve(renderInputSchema.parse({ template: t.id, values: t.sample }))
+      if (!r.ok) throw new Error(t.id)
+      if (brandName.test(r.request.source)) expect(r.request.source, t.id).toContain('#import "/_shared/brand.typ": *')
+    }
+  })
+
   it('selects a version only by its exact name: there is no latest', () => {
     const one = registry.resolve(renderInputSchema.parse({ template: 'one-pager@1', brand: BRAND }))
     expect(one.ok && one.request.meta?.templateVersion).toBe(1)

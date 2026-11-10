@@ -3,6 +3,8 @@ lang: en
 ---
 
 ```{=typst}
+// The brand's names (font-body, brand-primary, …), as a Typst template imports them
+#import "/_shared/brand.typ": *
 #set text(font: font-body)
 #block(below: 1.2em)[
   #text(font: font-heading, size: 20pt, weight: "bold", fill: brand-primary, title) \
